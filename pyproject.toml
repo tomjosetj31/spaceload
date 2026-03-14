@@ -10,7 +10,7 @@ readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 authors = [
-    { name = "tomjosetj31", email = "" },
+    { name = "tomjosetj31" },
 ]
 keywords = ["workspace", "developer-tools", "macos", "productivity", "cli"]
 classifiers = [
