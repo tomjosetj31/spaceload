@@ -19,6 +19,18 @@ A macOS CLI tool that records and replays developer workspace setups: browser ta
 
 ## Installation
 
+**Via pip:**
+```bash
+pip install spaceload
+```
+
+**Via Homebrew:**
+```bash
+brew tap tomjosetj31/spaceload
+brew install tomjosetj31/spaceload/spaceload
+```
+
+**From source:**
 ```bash
 git clone https://github.com/tomjosetj31/spaceload
 cd spaceload
