@@ -68,8 +68,18 @@ def cli() -> None:
 
 @cli.command("record")
 @click.argument("name")
-def record(name: str) -> None:
-    """Start recording a workspace session named NAME."""
+@click.option(
+    "--include-open", "-i",
+    is_flag=True,
+    default=False,
+    help="Also capture apps/tabs/projects already open when recording starts.",
+)
+def record(name: str, include_open: bool) -> None:
+    """Start recording a workspace session named NAME.
+    
+    By default, only captures new things opened during recording.
+    Use --include-open to also capture everything already open.
+    """
     if _daemon_is_running():
         click.echo(
             "A recording session is already active. Run 'ctx stop' first.",
@@ -88,6 +98,9 @@ def record(name: str) -> None:
         "--db",
         str(_DEFAULT_DB),
     ]
+    
+    if include_open:
+        daemon_cmd.append("--include-open")
 
     proc = subprocess.Popen(
         daemon_cmd,
@@ -109,9 +122,11 @@ def record(name: str) -> None:
         )
         sys.exit(1)
 
-    click.echo(
-        f"Recording started for '{name}'. Run 'ctx stop' when done."
-    )
+    msg = f"Recording started for '{name}'."
+    if include_open:
+        msg += " (including already open apps)"
+    msg += " Run 'ctx stop' when done."
+    click.echo(msg)
 
 
 # ---------------------------------------------------------------------------
@@ -259,3 +274,29 @@ def show(name: str) -> None:
         store.close()
 
     click.echo(yaml_str, nl=False)
+
+
+# ---------------------------------------------------------------------------
+# ctx shell-hook <shell>
+# ---------------------------------------------------------------------------
+
+@cli.command("shell-hook")
+@click.argument("shell", type=click.Choice(["zsh", "bash"], case_sensitive=False))
+def shell_hook(shell: str) -> None:
+    """Output shell integration script for command tracking.
+    
+    Add to your shell config:
+    
+    \b
+    # For zsh (~/.zshrc):
+    eval "$(ctx shell-hook zsh)"
+    
+    \b
+    # For bash (~/.bashrc):
+    eval "$(ctx shell-hook bash)"
+    
+    This enables tracking of terminal commands during recording sessions.
+    Commands are only sent when a recording session is active.
+    """
+    from ctx.shell.hooks import get_hook_script
+    click.echo(get_hook_script(shell))

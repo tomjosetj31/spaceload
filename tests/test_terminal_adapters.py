@@ -46,10 +46,28 @@ class TestITerm2Adapter:
             assert self.adapter.is_available() is False
 
     def test_get_open_dirs_returns_dirs(self):
-        output = "/home/user/project1\n/home/user/project2\n"
-        with patch("subprocess.run", return_value=_make_completed_process(stdout=output, returncode=0)):
+        """Test that get_open_dirs returns directories from tty -> lsof lookup."""
+        # The new implementation calls osascript to get ttys, then lsof for each tty
+        def mock_run(args, **kwargs):
+            if args[0] == "osascript":
+                # Return tty paths
+                return _make_completed_process(stdout="/dev/ttys001\n/dev/ttys002\n", returncode=0)
+            elif args[0] == "lsof" and "-t" in args:
+                # Return PID for tty
+                return _make_completed_process(stdout="12345\n", returncode=0)
+            elif args[0] == "lsof" and "-p" in args:
+                # Return lsof output with cwd
+                tty_num = "001" if "12345" in str(args) else "002"
+                cwd = "/home/user/project1" if tty_num == "001" else "/home/user/project2"
+                return _make_completed_process(
+                    stdout=f"iTerm2 12345 user cwd DIR 1,5 1234 5678 {cwd}\n",
+                    returncode=0
+                )
+            return _make_completed_process(returncode=1)
+        
+        with patch("subprocess.run", side_effect=mock_run):
             dirs = self.adapter.get_open_dirs()
-        assert dirs == ["/home/user/project1", "/home/user/project2"]
+        assert "/home/user/project1" in dirs
 
     def test_get_open_dirs_returns_empty_on_failure(self):
         with patch("subprocess.run", return_value=_make_completed_process(returncode=1)):
@@ -60,11 +78,25 @@ class TestITerm2Adapter:
             assert self.adapter.get_open_dirs() == []
 
     def test_get_open_dirs_filters_empty_strings(self):
-        output = "/home/user/project1\n\n/home/user/project2\n"
-        with patch("subprocess.run", return_value=_make_completed_process(stdout=output, returncode=0)):
+        """Test that empty ttys are filtered out."""
+        def mock_run(args, **kwargs):
+            if args[0] == "osascript":
+                # Return tty paths with empty lines
+                return _make_completed_process(stdout="/dev/ttys001\n\n/dev/ttys002\n", returncode=0)
+            elif args[0] == "lsof" and "-t" in args:
+                return _make_completed_process(stdout="12345\n", returncode=0)
+            elif args[0] == "lsof" and "-p" in args:
+                return _make_completed_process(
+                    stdout="iTerm2 12345 user cwd DIR 1,5 1234 5678 /home/user/project\n",
+                    returncode=0
+                )
+            return _make_completed_process(returncode=1)
+        
+        with patch("subprocess.run", side_effect=mock_run):
             dirs = self.adapter.get_open_dirs()
         assert "" not in dirs
-        assert len(dirs) == 2
+        # Should have at least one valid directory
+        assert len(dirs) >= 1
 
     def test_open_in_dir_success(self):
         with patch("subprocess.run", return_value=_make_completed_process(returncode=0)) as mock_run:

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ctx.adapters.ide.base import IDEAdapter, ProjectSet
-from ctx.adapters.ide.vscode import VSCodeAdapter, _parse_vscode_storage
-from ctx.adapters.ide.cursor import CursorAdapter, _parse_cursor_storage
+from ctx.adapters.ide.vscode import VSCodeAdapter, _get_projects_from_storage as _get_vscode_projects
+from ctx.adapters.ide.cursor import CursorAdapter, _get_projects_from_storage as _get_cursor_projects
 from ctx.adapters.ide.zed import ZedAdapter
 from ctx.adapters.ide.registry import IDEAdapterRegistry
 
@@ -25,41 +25,74 @@ def _make_completed_process(returncode=0):
     return mock
 
 
-def _make_storage_json(paths: list[str]) -> str:
+def _make_legacy_storage_json(paths: list[str]) -> str:
+    """Create storage.json with legacy workspaces3 format."""
     workspaces = [{"folderUri": f"file://{p}"} for p in paths]
     return json.dumps({"openedPathsList": {"workspaces3": workspaces}})
 
 
+def _make_windows_state_storage_json(paths: list[str]) -> str:
+    """Create storage.json with modern windowsState format."""
+    if not paths:
+        return json.dumps({"windowsState": {}})
+    
+    # First path goes in lastActiveWindow, rest in openedWindows
+    last_window = {"folder": f"file://{paths[0]}"}
+    opened_windows = [{"folder": f"file://{p}"} for p in paths[1:]]
+    
+    return json.dumps({
+        "windowsState": {
+            "lastActiveWindow": last_window,
+            "openedWindows": opened_windows
+        }
+    })
+
+
 # ---------------------------------------------------------------------------
-# _parse_vscode_storage helper
+# _get_projects_from_storage helper (VS Code)
 # ---------------------------------------------------------------------------
 
-class TestParseVscodeStorage:
-    def test_returns_existing_paths(self, tmp_path):
-        project_dir = tmp_path / "myproject"
-        project_dir.mkdir()
+class TestGetVscodeProjects:
+    def test_returns_paths_from_windows_state(self, tmp_path):
+        # Note: The adapter no longer validates path existence since remote paths can't be checked
         storage = tmp_path / "storage.json"
-        storage.write_text(_make_storage_json([str(project_dir)]))
+        storage.write_text(_make_windows_state_storage_json(["/myproject"]))
 
-        result = _parse_vscode_storage(storage)
-        assert str(project_dir) in result
+        result = _get_vscode_projects(storage)
+        assert "/myproject" in result
 
-    def test_skips_nonexistent_paths(self, tmp_path):
+    def test_returns_paths_from_legacy_format(self, tmp_path):
         storage = tmp_path / "storage.json"
-        storage.write_text(_make_storage_json(["/does/not/exist"]))
+        storage.write_text(_make_legacy_storage_json(["/myproject"]))
 
-        result = _parse_vscode_storage(storage)
-        assert result == []
+        result = _get_vscode_projects(storage)
+        assert "/myproject" in result
+
+    def test_returns_all_paths_including_nonexistent(self, tmp_path):
+        # Remote paths (SSH, WSL, etc.) can't be validated, so we don't check existence
+        storage = tmp_path / "storage.json"
+        storage.write_text(_make_windows_state_storage_json(["/does/not/exist"]))
+
+        result = _get_vscode_projects(storage)
+        assert "/does/not/exist" in result
 
     def test_returns_empty_on_invalid_json(self, tmp_path):
         storage = tmp_path / "storage.json"
         storage.write_text("not json")
-        assert _parse_vscode_storage(storage) == []
+        assert _get_vscode_projects(storage) == []
 
-    def test_skips_entries_without_uri(self, tmp_path):
+    def test_returns_empty_on_empty_windows_state(self, tmp_path):
         storage = tmp_path / "storage.json"
-        storage.write_text(json.dumps({"openedPathsList": {"workspaces3": [{}]}}))
-        assert _parse_vscode_storage(storage) == []
+        storage.write_text(json.dumps({"windowsState": {}}))
+        assert _get_vscode_projects(storage) == []
+
+    def test_multiple_windows(self, tmp_path):
+        storage = tmp_path / "storage.json"
+        storage.write_text(_make_windows_state_storage_json(["/project1", "/project2"]))
+
+        result = _get_vscode_projects(storage)
+        assert "/project1" in result
+        assert "/project2" in result
 
 
 # ---------------------------------------------------------------------------
@@ -73,28 +106,52 @@ class TestVSCodeAdapter:
     def test_name(self):
         assert self.adapter.name == "vscode"
 
-    def test_is_available_when_binary_present(self):
-        with patch("shutil.which", return_value="/usr/local/bin/code"):
+    def test_is_available_when_running(self):
+        # VS Code is considered available if the process is running
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)  # pgrep finds Code process
             assert self.adapter.is_available() is True
 
-    def test_is_available_when_binary_missing(self):
-        with patch("shutil.which", return_value=None):
-            assert self.adapter.is_available() is False
+    def test_is_available_when_cli_present(self):
+        # Fallback: CLI exists even if process isn't running
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1)  # pgrep returns 1 (not running)
+            with patch("shutil.which", return_value="/usr/local/bin/code"):
+                assert self.adapter.is_available() is True
+
+    def test_is_available_when_not_running_and_no_cli(self):
+        # Neither running nor CLI present
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1)  # pgrep returns 1
+            with patch("shutil.which", return_value=None):
+                assert self.adapter.is_available() is False
 
     def test_get_open_projects_reads_storage(self, tmp_path):
         project_dir = tmp_path / "myproject"
         project_dir.mkdir()
         storage = tmp_path / "storage.json"
-        storage.write_text(_make_storage_json([str(project_dir)]))
+        storage.write_text(_make_windows_state_storage_json([str(project_dir)]))
 
-        with patch("ctx.adapters.ide.vscode._STORAGE_CANDIDATES", [storage]):
-            result = self.adapter.get_open_projects()
+        # Mock AppleScript to return nothing, so it falls back to storage
+        with patch("ctx.adapters.ide.vscode._get_projects_from_applescript", return_value=[]):
+            with patch("ctx.adapters.ide.vscode._STORAGE_CANDIDATES", [storage]):
+                result = self.adapter.get_open_projects()
         assert str(project_dir) in result
 
     def test_get_open_projects_returns_empty_when_no_storage(self, tmp_path):
         missing = tmp_path / "missing.json"
-        with patch("ctx.adapters.ide.vscode._STORAGE_CANDIDATES", [missing]):
-            assert self.adapter.get_open_projects() == []
+        with patch("ctx.adapters.ide.vscode._get_projects_from_applescript", return_value=[]):
+            with patch("ctx.adapters.ide.vscode._STORAGE_CANDIDATES", [missing]):
+                assert self.adapter.get_open_projects() == []
+
+    def test_get_open_projects_prefers_applescript(self, tmp_path):
+        """AppleScript results should be used when available."""
+        project_dir = tmp_path / "myproject"
+        project_dir.mkdir()
+        
+        with patch("ctx.adapters.ide.vscode._get_projects_from_applescript", return_value=[str(project_dir)]):
+            result = self.adapter.get_open_projects()
+        assert str(project_dir) in result
 
     def test_open_project_success(self):
         with patch("subprocess.run", return_value=_make_completed_process(0)) as mock_run:
@@ -132,16 +189,18 @@ class TestCursorAdapter:
         project_dir = tmp_path / "cursorproject"
         project_dir.mkdir()
         storage = tmp_path / "storage.json"
-        storage.write_text(_make_storage_json([str(project_dir)]))
+        storage.write_text(_make_windows_state_storage_json([str(project_dir)]))
 
-        with patch("ctx.adapters.ide.cursor._STORAGE_PATH", storage):
-            result = self.adapter.get_open_projects()
+        with patch("ctx.adapters.ide.cursor._get_projects_from_applescript", return_value=[]):
+            with patch("ctx.adapters.ide.cursor._STORAGE_PATH", storage):
+                result = self.adapter.get_open_projects()
         assert str(project_dir) in result
 
     def test_get_open_projects_returns_empty_when_no_storage(self, tmp_path):
         missing = tmp_path / "missing.json"
-        with patch("ctx.adapters.ide.cursor._STORAGE_PATH", missing):
-            assert self.adapter.get_open_projects() == []
+        with patch("ctx.adapters.ide.cursor._get_projects_from_applescript", return_value=[]):
+            with patch("ctx.adapters.ide.cursor._STORAGE_PATH", missing):
+                assert self.adapter.get_open_projects() == []
 
     def test_open_project_success(self):
         with patch("subprocess.run", return_value=_make_completed_process(0)) as mock_run:
@@ -234,8 +293,11 @@ class TestIDEAdapterRegistry:
 
     def test_available_adapters_empty_when_none_available(self):
         registry = IDEAdapterRegistry()
-        with patch("shutil.which", return_value=None):
-            assert registry.available_adapters() == []
+        # Mock subprocess.run (for pgrep) and shutil.which for all adapters
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1)  # All pgrep calls fail
+            with patch("shutil.which", return_value=None):
+                assert registry.available_adapters() == []
 
     def test_get_adapter_vscode(self):
         registry = IDEAdapterRegistry()

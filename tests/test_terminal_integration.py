@@ -9,6 +9,7 @@ import pytest
 
 from ctx.daemon.server import TerminalPoller
 from ctx.replayer.replayer import Replayer
+from ctx.adapters.terminal.base import TerminalSession
 
 
 # ---------------------------------------------------------------------------
@@ -19,7 +20,7 @@ class TestTerminalPollerIntegration:
     """Test that TerminalPoller correctly detects new terminal dirs and appends to the action log."""
 
     def test_new_dir_emits_terminal_session_open_event(self):
-        """Poller should emit terminal_session_open when a new directory appears."""
+        """Poller should emit terminal_session_open when a new session appears."""
         actions: list[dict] = []
         poller = TerminalPoller(actions, poll_interval=0.05)
 
@@ -31,11 +32,15 @@ class TestTerminalPollerIntegration:
             adapter.name = "iterm2"
             call_count += 1
             if call_count == 1:
-                adapter.get_open_dirs.return_value = ["/home/user/old-project"]
+                # First poll: baseline with one session
+                adapter.get_sessions.return_value = [
+                    TerminalSession(app="iterm2", directory="/home/user/old-project", session_id="/dev/ttys001")
+                ]
             else:
-                adapter.get_open_dirs.return_value = [
-                    "/home/user/old-project",
-                    "/home/user/new-project",
+                # Subsequent polls: new session appears
+                adapter.get_sessions.return_value = [
+                    TerminalSession(app="iterm2", directory="/home/user/old-project", session_id="/dev/ttys001"),
+                    TerminalSession(app="iterm2", directory="/home/user/new-project", session_id="/dev/ttys002"),
                 ]
             return [adapter]
 
@@ -61,7 +66,9 @@ class TestTerminalPollerIntegration:
 
         adapter = MagicMock()
         adapter.name = "iterm2"
-        adapter.get_open_dirs.return_value = ["/home/user/project"]
+        adapter.get_sessions.return_value = [
+            TerminalSession(app="iterm2", directory="/home/user/project", session_id="/dev/ttys001")
+        ]
         mock_registry = MagicMock()
         mock_registry.available_adapters.return_value = [adapter]
 
@@ -73,13 +80,15 @@ class TestTerminalPollerIntegration:
         assert actions == []
 
     def test_no_event_when_dirs_stable(self):
-        """No events when open dirs remain the same across polls."""
+        """No events when sessions remain the same across polls."""
         actions: list[dict] = []
         poller = TerminalPoller(actions, poll_interval=0.05)
 
         adapter = MagicMock()
         adapter.name = "terminal"
-        adapter.get_open_dirs.return_value = ["/home/user/project"]
+        adapter.get_sessions.return_value = [
+            TerminalSession(app="terminal", directory="/home/user/project", session_id="/dev/ttys001")
+        ]
         mock_registry = MagicMock()
         mock_registry.available_adapters.return_value = [adapter]
 
@@ -103,9 +112,11 @@ class TestTerminalPollerIntegration:
             adapter.name = "kitty"
             call_count += 1
             if call_count == 1:
-                adapter.get_open_dirs.return_value = []
+                adapter.get_sessions.return_value = []
             else:
-                adapter.get_open_dirs.return_value = ["/home/user/kitty-project"]
+                adapter.get_sessions.return_value = [
+                    TerminalSession(app="kitty", directory="/home/user/kitty-project", session_id="/dev/ttys001")
+                ]
             return [adapter]
 
         mock_registry = MagicMock()
@@ -137,7 +148,7 @@ class TestTerminalPollerIntegration:
         assert actions == []
 
     def test_multiple_new_dirs_emit_multiple_events(self):
-        """Each new directory gets its own terminal_session_open action."""
+        """Each new session gets its own terminal_session_open action."""
         actions: list[dict] = []
         poller = TerminalPoller(actions, poll_interval=0.05)
 
@@ -149,11 +160,11 @@ class TestTerminalPollerIntegration:
             adapter.name = "iterm2"
             call_count += 1
             if call_count == 1:
-                adapter.get_open_dirs.return_value = []
+                adapter.get_sessions.return_value = []
             else:
-                adapter.get_open_dirs.return_value = [
-                    "/home/user/project-a",
-                    "/home/user/project-b",
+                adapter.get_sessions.return_value = [
+                    TerminalSession(app="iterm2", directory="/home/user/project-a", session_id="/dev/ttys001"),
+                    TerminalSession(app="iterm2", directory="/home/user/project-b", session_id="/dev/ttys002"),
                 ]
             return [adapter]
 
@@ -169,6 +180,46 @@ class TestTerminalPollerIntegration:
         dirs = {a["directory"] for a in open_actions}
         assert "/home/user/project-a" in dirs
         assert "/home/user/project-b" in dirs
+
+    def test_dir_change_emits_terminal_dir_change_event(self):
+        """Poller should emit terminal_dir_change when a session changes directory."""
+        actions: list[dict] = []
+        poller = TerminalPoller(actions, poll_interval=0.05)
+
+        call_count = 0
+
+        def fake_available_adapters():
+            nonlocal call_count
+            adapter = MagicMock()
+            adapter.name = "iterm2"
+            call_count += 1
+            if call_count == 1:
+                # First poll: baseline
+                adapter.get_sessions.return_value = [
+                    TerminalSession(app="iterm2", directory="/home/user/old-dir", session_id="/dev/ttys001")
+                ]
+            else:
+                # Subsequent polls: same session, different directory
+                adapter.get_sessions.return_value = [
+                    TerminalSession(app="iterm2", directory="/home/user/new-dir", session_id="/dev/ttys001")
+                ]
+            return [adapter]
+
+        mock_registry = MagicMock()
+        mock_registry.available_adapters.side_effect = fake_available_adapters
+
+        with patch("ctx.daemon.server.TerminalAdapterRegistry", return_value=mock_registry):
+            poller.start()
+            time.sleep(0.3)
+            poller.stop()
+
+        change_actions = [a for a in actions if a.get("type") == "terminal_dir_change"]
+        assert len(change_actions) >= 1
+        action = change_actions[0]
+        assert action["app"] == "iterm2"
+        assert action["directory"] == "/home/user/new-dir"
+        assert action["previous_directory"] == "/home/user/old-dir"
+        assert "timestamp" in action
 
 
 # ---------------------------------------------------------------------------

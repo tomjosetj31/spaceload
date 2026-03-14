@@ -28,9 +28,10 @@ class TestBrowserPollerIntegration:
         return registry, adapter
 
     def test_new_tab_emits_browser_tab_open_event(self):
-        """Poller should emit browser_tab_open when a new URL appears."""
+        """Poller should emit browser_tab_open when a new URL appears and stabilizes."""
         actions: list[dict] = []
-        poller = BrowserPoller(actions, poll_interval=0.05)
+        # Use short stabilization time for tests
+        poller = BrowserPoller(actions, poll_interval=0.05, stabilization_time=0.1, domain_cooldown=0.1)
 
         call_count = 0
 
@@ -53,7 +54,7 @@ class TestBrowserPollerIntegration:
 
         with patch("ctx.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
             poller.start()
-            time.sleep(0.3)
+            time.sleep(0.4)  # Wait for stabilization
             poller.stop()
 
         tab_open_actions = [a for a in actions if a.get("type") == "browser_tab_open"]
@@ -102,7 +103,8 @@ class TestBrowserPollerIntegration:
     def test_event_contains_required_fields(self):
         """browser_tab_open action must contain type, browser, url, timestamp."""
         actions: list[dict] = []
-        poller = BrowserPoller(actions, poll_interval=0.05)
+        # Use short stabilization time for tests
+        poller = BrowserPoller(actions, poll_interval=0.05, stabilization_time=0.1, domain_cooldown=0.1)
 
         call_count = 0
 
@@ -122,7 +124,7 @@ class TestBrowserPollerIntegration:
 
         with patch("ctx.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
             poller.start()
-            time.sleep(0.3)
+            time.sleep(0.4)  # Wait for stabilization
             poller.stop()
 
         open_actions = [a for a in actions if a.get("type") == "browser_tab_open"]
@@ -152,7 +154,8 @@ class TestBrowserPollerIntegration:
     def test_multiple_new_tabs_emit_multiple_events(self):
         """Each new URL gets its own browser_tab_open action."""
         actions: list[dict] = []
-        poller = BrowserPoller(actions, poll_interval=0.05)
+        # Use short stabilization time for tests
+        poller = BrowserPoller(actions, poll_interval=0.05, stabilization_time=0.1, domain_cooldown=0.1)
 
         call_count = 0
 
@@ -175,7 +178,7 @@ class TestBrowserPollerIntegration:
 
         with patch("ctx.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
             poller.start()
-            time.sleep(0.3)
+            time.sleep(0.4)  # Wait for stabilization
             poller.stop()
 
         open_actions = [a for a in actions if a.get("type") == "browser_tab_open"]

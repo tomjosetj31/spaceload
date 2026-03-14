@@ -10,6 +10,7 @@ from ctx.adapters.browser.base import BrowserAdapter, TabSet
 from ctx.adapters.browser.chrome import ChromeAdapter
 from ctx.adapters.browser.safari import SafariAdapter
 from ctx.adapters.browser.arc import ArcAdapter
+from ctx.adapters.browser.firefox import FirefoxAdapter
 from ctx.adapters.browser.registry import BrowserAdapterRegistry
 
 
@@ -194,9 +195,50 @@ class TestBrowserAdapterRegistry:
         registry = BrowserAdapterRegistry()
         assert registry.get_adapter("arc").name == "arc"
 
+    def test_get_adapter_firefox(self):
+        registry = BrowserAdapterRegistry()
+        assert registry.get_adapter("firefox").name == "firefox"
+
     def test_get_adapter_unknown_returns_none(self):
         registry = BrowserAdapterRegistry()
-        assert registry.get_adapter("firefox") is None
+        assert registry.get_adapter("opera") is None
+
+
+# ---------------------------------------------------------------------------
+# FirefoxAdapter
+# ---------------------------------------------------------------------------
+
+class TestFirefoxAdapter:
+    def setup_method(self):
+        self.adapter = FirefoxAdapter()
+
+    def test_name(self):
+        assert self.adapter.name == "firefox"
+
+    def test_is_available_when_running(self):
+        with patch("subprocess.run", return_value=_make_completed_process(returncode=0)):
+            assert self.adapter.is_available() is True
+
+    def test_is_available_when_not_running(self):
+        with patch("subprocess.run", return_value=_make_completed_process(returncode=1)):
+            assert self.adapter.is_available() is False
+
+    def test_get_open_tabs_returns_empty_when_no_profile(self):
+        adapter = FirefoxAdapter()
+        adapter._profile_dir = None
+        assert adapter.get_open_tabs() == []
+
+    def test_open_url_success(self):
+        with patch("subprocess.run", return_value=_make_completed_process(returncode=0)) as mock_run:
+            result = self.adapter.open_url("https://mozilla.org")
+        assert result is True
+        args = mock_run.call_args[0][0]
+        assert "Firefox" in args
+        assert "https://mozilla.org" in args
+
+    def test_open_url_failure(self):
+        with patch("subprocess.run", return_value=_make_completed_process(returncode=1)):
+            assert self.adapter.open_url("https://mozilla.org") is False
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ from __future__ import annotations
 from ctx.adapters.browser.arc import ArcAdapter
 from ctx.adapters.browser.base import BrowserAdapter
 from ctx.adapters.browser.chrome import ChromeAdapter
+from ctx.adapters.browser.firefox import FirefoxAdapter
 from ctx.adapters.browser.safari import SafariAdapter
 
 
@@ -16,6 +17,7 @@ class BrowserAdapterRegistry:
             ChromeAdapter(),
             ArcAdapter(),
             SafariAdapter(),
+            FirefoxAdapter(),
         ]
 
     def available_adapters(self) -> list[BrowserAdapter]:
