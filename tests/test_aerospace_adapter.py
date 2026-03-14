@@ -193,10 +193,12 @@ class TestBrowserPollerWorkspaceEnrichment:
         mock_aerospace = MagicMock()
         mock_aerospace.get_app_workspace.return_value = "C"
 
+        mock_wm = MagicMock()
+        mock_wm.get_app_workspace.return_value = "C"
+
         with patch("ctx.daemon.server.BrowserAdapterRegistry", return_value=mock_registry), \
-             patch("ctx.daemon.server.AeroSpaceAdapter") as mock_cls:
-            mock_cls.return_value.is_available.return_value = True
-            mock_cls.return_value.get_app_workspace.return_value = "C"
+             patch("ctx.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
+            mock_reg_cls.return_value.detect_active.return_value = mock_wm
             poller.start()
             time.sleep(0.3)
             poller.stop()
@@ -205,7 +207,7 @@ class TestBrowserPollerWorkspaceEnrichment:
         assert open_actions
         assert open_actions[0].get("workspace") == "C"
 
-    def test_workspace_omitted_when_aerospace_unavailable(self):
+    def test_workspace_omitted_when_no_wm_available(self):
         actions: list[dict] = []
         poller = BrowserPoller(actions, poll_interval=0.05)
 
@@ -226,8 +228,8 @@ class TestBrowserPollerWorkspaceEnrichment:
         mock_registry.available_adapters.side_effect = fake_available_adapters
 
         with patch("ctx.daemon.server.BrowserAdapterRegistry", return_value=mock_registry), \
-             patch("ctx.daemon.server.AeroSpaceAdapter") as mock_cls:
-            mock_cls.return_value.is_available.return_value = False
+             patch("ctx.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
+            mock_reg_cls.return_value.detect_active.return_value = None
             poller.start()
             time.sleep(0.3)
             poller.stop()
@@ -258,10 +260,12 @@ class TestIDEPollerWorkspaceEnrichment:
         mock_registry = MagicMock()
         mock_registry.available_adapters.side_effect = fake_available_adapters
 
+        mock_wm = MagicMock()
+        mock_wm.get_app_workspace.return_value = "4"
+
         with patch("ctx.daemon.server.IDEAdapterRegistry", return_value=mock_registry), \
-             patch("ctx.daemon.server.AeroSpaceAdapter") as mock_cls:
-            mock_cls.return_value.is_available.return_value = True
-            mock_cls.return_value.get_app_workspace.return_value = "4"
+             patch("ctx.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
+            mock_reg_cls.return_value.detect_active.return_value = mock_wm
             poller.start()
             time.sleep(0.3)
             poller.stop()
@@ -292,10 +296,12 @@ class TestTerminalPollerWorkspaceEnrichment:
         mock_registry = MagicMock()
         mock_registry.available_adapters.side_effect = fake_available_adapters
 
+        mock_wm = MagicMock()
+        mock_wm.get_app_workspace.return_value = "3"
+
         with patch("ctx.daemon.server.TerminalAdapterRegistry", return_value=mock_registry), \
-             patch("ctx.daemon.server.AeroSpaceAdapter") as mock_cls:
-            mock_cls.return_value.is_available.return_value = True
-            mock_cls.return_value.get_app_workspace.return_value = "3"
+             patch("ctx.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
+            mock_reg_cls.return_value.detect_active.return_value = mock_wm
             poller.start()
             time.sleep(0.3)
             poller.stop()
