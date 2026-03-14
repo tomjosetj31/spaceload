@@ -101,6 +101,8 @@ class Replayer:
                 self._handle_ide_project_open(i, action)
             elif action_type == "terminal_session_open":
                 self._handle_terminal_session_open(i, action)
+            elif action_type == "app_open":
+                self._handle_app_open(i, action)
             else:
                 print(f"  [{i:>3}] {action_type}: {data}")
 
@@ -278,6 +280,28 @@ class Replayer:
             for wid in target_ids:
                 aerospace.move_window_to_workspace(wid, workspace)
                 break
+
+    # ------------------------------------------------------------------
+    # Generic app handler
+    # ------------------------------------------------------------------
+
+    def _handle_app_open(self, index: int, action: dict[str, Any]) -> None:
+        """Replay an app_open action by launching the app with 'open -a'."""
+        app_name = action.get("app_name", "")
+        workspace = action.get("workspace")
+        print(f"  [{index:>3}] app_open: {app_name!r}"
+              + (f" workspace={workspace!r}" if workspace else ""))
+
+        result = subprocess.run(["open", "-a", app_name], capture_output=True)
+        if result.returncode != 0:
+            logger.warning("Replayer: could not open app %r", app_name)
+            print(f"         [warn] Could not open {app_name!r} — app may not be installed")
+            return
+
+        print(f"         [ok] Launched {app_name!r}")
+
+        if workspace:
+            self._place_in_workspace(app_name, workspace)
 
     # ------------------------------------------------------------------
     # AeroSpace workspace placement helper
