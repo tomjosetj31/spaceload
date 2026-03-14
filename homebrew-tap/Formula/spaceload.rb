@@ -3,8 +3,8 @@ class Spaceload < Formula
 
   desc "Record and replay developer workspace setups"
   homepage "https://github.com/tomjosetj31/spaceload"
-  url "https://files.pythonhosted.org/packages/source/s/spaceload/spaceload-0.1.0.tar.gz"
-  sha256 "FILL_IN_AFTER_PYPI_PUBLISH"
+  url "https://files.pythonhosted.org/packages/6d/d7/e0c3b054263a5919cabf3193682ec6cb817a7e812ea58d41a101e2614886/spaceload-0.1.0.tar.gz"
+  sha256 "ab1932cb66c8811e2fd328ce94e967ea18c3fe9d80c398830a53c2836acb6202"
   license "MIT"
 
   depends_on "python@3.11"
