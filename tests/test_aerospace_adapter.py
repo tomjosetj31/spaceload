@@ -14,6 +14,7 @@ from ctx.adapters.aerospace.adapter import (
     IDE_APP_NAMES,
     TERMINAL_APP_NAMES,
 )
+from ctx.adapters.terminal.base import TerminalSession
 from ctx.daemon.server import BrowserPoller, IDEPoller, TerminalPoller
 from ctx.replayer.replayer import Replayer
 
@@ -172,7 +173,8 @@ class TestAppNameMappings:
 class TestBrowserPollerWorkspaceEnrichment:
     def test_workspace_added_to_browser_tab_open_event(self):
         actions: list[dict] = []
-        poller = BrowserPoller(actions, poll_interval=0.05)
+        # Use short stabilization time for tests
+        poller = BrowserPoller(actions, poll_interval=0.05, stabilization_time=0.1, domain_cooldown=0.1)
 
         call_count = 0
 
@@ -200,7 +202,7 @@ class TestBrowserPollerWorkspaceEnrichment:
              patch("ctx.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
             mock_reg_cls.return_value.detect_active.return_value = mock_wm
             poller.start()
-            time.sleep(0.3)
+            time.sleep(0.4)  # Wait for stabilization
             poller.stop()
 
         open_actions = [a for a in actions if a.get("type") == "browser_tab_open"]
@@ -209,7 +211,8 @@ class TestBrowserPollerWorkspaceEnrichment:
 
     def test_workspace_omitted_when_no_wm_available(self):
         actions: list[dict] = []
-        poller = BrowserPoller(actions, poll_interval=0.05)
+        # Use short stabilization time for tests
+        poller = BrowserPoller(actions, poll_interval=0.05, stabilization_time=0.1, domain_cooldown=0.1)
 
         call_count = 0
 
@@ -231,7 +234,7 @@ class TestBrowserPollerWorkspaceEnrichment:
              patch("ctx.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
             mock_reg_cls.return_value.detect_active.return_value = None
             poller.start()
-            time.sleep(0.3)
+            time.sleep(0.4)  # Wait for stabilization
             poller.stop()
 
         open_actions = [a for a in actions if a.get("type") == "browser_tab_open"]
@@ -288,9 +291,11 @@ class TestTerminalPollerWorkspaceEnrichment:
             adapter.name = "iterm2"
             call_count += 1
             if call_count == 1:
-                adapter.get_open_dirs.return_value = []
+                adapter.get_sessions.return_value = []
             else:
-                adapter.get_open_dirs.return_value = ["/home/user/projects"]
+                adapter.get_sessions.return_value = [
+                    TerminalSession(app="iterm2", directory="/home/user/projects", session_id="/dev/ttys001")
+                ]
             return [adapter]
 
         mock_registry = MagicMock()

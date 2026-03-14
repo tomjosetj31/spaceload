@@ -22,6 +22,12 @@ dev = [
     "pytest>=7.4",
     "pytest-timeout>=2.1",
 ]
+firefox = [
+    "lz4>=4.0",  # Required for reading Firefox session files
+]
+all = [
+    "lz4>=4.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

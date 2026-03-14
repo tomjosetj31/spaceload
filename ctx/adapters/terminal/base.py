@@ -12,6 +12,7 @@ class TerminalSession:
 
     app: str
     directory: str
+    session_id: str = ""  # Unique identifier (e.g., tty path) for the session
 
 
 class TerminalAdapter(ABC):
@@ -29,6 +30,17 @@ class TerminalAdapter(ABC):
     @abstractmethod
     def get_open_dirs(self) -> list[str]:
         """Return working directories of all currently open terminal sessions."""
+
+    def get_sessions(self) -> list[TerminalSession]:
+        """Return all open terminal sessions with their identifiers.
+        
+        Default implementation converts get_open_dirs() to sessions.
+        Adapters should override this for better session tracking.
+        """
+        return [
+            TerminalSession(app=self.name, directory=d, session_id=f"{self.name}:{d}")
+            for d in self.get_open_dirs()
+        ]
 
     @abstractmethod
     def open_in_dir(self, directory: str) -> bool:

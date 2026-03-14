@@ -13,10 +13,35 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import sys
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_CTX_DIR = Path.home() / ".ctx"
+_REPLAY_LOG_PATH = _CTX_DIR / "replay.log"
+
+
+def _setup_replay_logging() -> None:
+    """Configure logging for replay operations."""
+    _CTX_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Create a file handler for replay log
+    file_handler = logging.FileHandler(_REPLAY_LOG_PATH, mode="w")
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)-8s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    file_handler.setFormatter(file_formatter)
+    
+    # Configure the replayer logger
+    replay_logger = logging.getLogger(__name__)
+    replay_logger.setLevel(logging.DEBUG)
+    replay_logger.addHandler(file_handler)
 
 _SENTINEL = object()  # marks "not yet initialised" for the aerospace field
 
@@ -48,6 +73,7 @@ class Replayer:
         self._ide_registry = None      # IDE — lazy-loaded
         self._terminal_registry = None  # Terminal — lazy-loaded
         self._aerospace: object | None = _SENTINEL  # AeroSpace — lazy-loaded
+        self._opened_terminal_sessions: set[str] = set()  # Track opened sessions
 
     def _get_registry(self):
         """Return a VPNAdapterRegistry, initialising it on first call."""
@@ -84,12 +110,63 @@ class Replayer:
             self._aerospace = WorkspaceManagerRegistry().detect_active()
         return self._aerospace
 
+    def _consolidate_terminal_sessions(self) -> dict[str, dict]:
+        """Consolidate terminal actions by session_id.
+        
+        Returns a dict mapping session_id to:
+        - app: terminal app name
+        - start_directory: the initial directory for this session
+        - commands: list of ALL commands to run (including cd)
+        - workspace: AeroSpace workspace (if any)
+        """
+        sessions: dict[str, dict] = {}
+        
+        for action in self.actions:
+            action_type = action.get("type", "")
+            session_id = action.get("session_id", "")
+            
+            if action_type == "terminal_session_open":
+                if session_id and session_id not in sessions:
+                    sessions[session_id] = {
+                        "app": action.get("app", ""),
+                        "start_directory": action.get("directory", ""),
+                        "commands": [],
+                        "workspace": action.get("workspace"),
+                    }
+            
+            elif action_type == "terminal_command":
+                if session_id and session_id in sessions:
+                    cmd = action.get("cmd", "").strip()
+                    # Skip ctx commands (like ctx stop) but keep everything else including cd
+                    if cmd and not cmd.startswith("ctx "):
+                        sessions[session_id]["commands"].append(cmd)
+        
+        return sessions
+
     def replay(self) -> None:
         """Execute all recorded actions in order."""
+        _setup_replay_logging()
+        
+        logger.info("=" * 60)
+        logger.info("REPLAY STARTED: workspace '%s'", self.workspace_name)
+        logger.info("Total actions to replay: %d", len(self.actions))
+        logger.info("Log file: %s", _REPLAY_LOG_PATH)
+        logger.info("=" * 60)
+        
         print(f"[ctx] Replaying workspace '{self.workspace_name}' ({len(self.actions)} actions)")
+        print(f"[ctx] Replay log: {_REPLAY_LOG_PATH}")
+        
+        # Consolidate terminal sessions - we'll open ONE terminal per session
+        # in the final directory, with all commands
+        terminal_sessions = self._consolidate_terminal_sessions()
+        logger.info("Consolidated %d terminal sessions", len(terminal_sessions))
+        
         for i, action in enumerate(self.actions, start=1):
             action_type = action.get("type", "unknown")
             data = action.get("data", {})
+            logger.info("-" * 40)
+            logger.info("ACTION %d/%d: %s", i, len(self.actions), action_type)
+            logger.info("  Expected: %s", action)
 
             if action_type == "vpn_connect":
                 self._handle_vpn_connect(i, action)
@@ -100,13 +177,36 @@ class Replayer:
             elif action_type == "ide_project_open":
                 self._handle_ide_project_open(i, action)
             elif action_type == "terminal_session_open":
-                self._handle_terminal_session_open(i, action)
+                # Use consolidated session info
+                session_id = action.get("session_id", "")
+                if session_id in terminal_sessions:
+                    self._handle_terminal_session_consolidated(i, session_id, terminal_sessions[session_id])
+                else:
+                    self._handle_terminal_session_open(i, action)
+            elif action_type == "terminal_dir_change":
+                # Skip - handled by consolidated session
+                session_id = action.get("session_id", "")
+                if session_id in self._opened_terminal_sessions:
+                    logger.info("  Skipping terminal_dir_change (handled by consolidated session)")
+                else:
+                    self._handle_terminal_dir_change(i, action)
+            elif action_type == "terminal_command":
+                # Skip - handled by consolidated session
+                session_id = action.get("session_id", "")
+                if session_id in self._opened_terminal_sessions:
+                    logger.info("  Skipping terminal_command (handled by consolidated session)")
+                else:
+                    self._handle_terminal_command(i, action)
             elif action_type == "app_open":
                 self._handle_app_open(i, action)
             else:
                 print(f"  [{i:>3}] {action_type}: {data}")
 
+        logger.info("=" * 60)
+        logger.info("REPLAY COMPLETE")
+        logger.info("=" * 60)
         print("[ctx] Replay complete")
+        print(f"[ctx] See {_REPLAY_LOG_PATH} for detailed replay log")
 
     # ------------------------------------------------------------------
     # VPN action handlers
@@ -122,9 +222,7 @@ class Replayer:
         adapter = registry.get_adapter(client)
 
         if adapter is None:
-            logger.warning(
-                "Replayer: no adapter found for VPN client %r — skipping vpn_connect", client
-            )
+            logger.warning("  Result: SKIPPED - no adapter found for VPN client %r", client)
             print(f"         [warn] No adapter for '{client}' — skipping")
             return
 
@@ -135,11 +233,10 @@ class Replayer:
 
         success = _retry_vpn_action(_attempt)
         if success:
+            logger.info("  Result: SUCCESS - connected via %s", client)
             print(f"         [ok] Connected via {client}")
         else:
-            logger.warning(
-                "Replayer: vpn_connect via %r failed after 3 retries", client
-            )
+            logger.warning("  Result: FAILED - vpn_connect via %r failed after 3 retries", client)
             print(f"         [warn] vpn_connect via '{client}' failed after 3 retries — continuing")
 
     def _handle_vpn_disconnect(self, index: int, action: dict[str, Any]) -> None:
@@ -151,17 +248,16 @@ class Replayer:
         adapter = registry.get_adapter(client)
 
         if adapter is None:
-            logger.warning(
-                "Replayer: no adapter found for VPN client %r — skipping vpn_disconnect", client
-            )
+            logger.warning("  Result: SKIPPED - no adapter found for VPN client %r", client)
             print(f"         [warn] No adapter for '{client}' — skipping")
             return
 
         success = adapter.disconnect()
         if success:
+            logger.info("  Result: SUCCESS - disconnected via %s", client)
             print(f"         [ok] Disconnected via {client}")
         else:
-            logger.warning("Replayer: vpn_disconnect via %r failed", client)
+            logger.warning("  Result: FAILED - vpn_disconnect via %r failed", client)
             print(f"         [warn] vpn_disconnect via '{client}' failed — continuing")
 
     # ------------------------------------------------------------------
@@ -184,17 +280,19 @@ class Replayer:
             # Fall back to the system default browser
             result = subprocess.run(["open", url], capture_output=True)
             if result.returncode == 0:
+                logger.info("  Result: SUCCESS - opened in default browser (no adapter for %s)", browser)
                 print(f"         [ok] Opened in default browser")
             else:
-                logger.warning("Replayer: failed to open URL %r via default browser", url)
+                logger.warning("  Result: FAILED - could not open URL %r via default browser", url)
                 print(f"         [warn] Failed to open URL — continuing")
             return
 
         opened = adapter.open_url(url)
         if opened:
+            logger.info("  Result: SUCCESS - opened in %s", browser)
             print(f"         [ok] Opened in {browser}")
         else:
-            logger.warning("Replayer: browser_tab_open via %r failed for %r", browser, url)
+            logger.warning("  Result: FAILED - browser_tab_open via %r failed for %r", browser, url)
             print(f"         [warn] Failed to open in '{browser}' — continuing")
             return
 
@@ -218,18 +316,15 @@ class Replayer:
         adapter = registry.get_adapter(client)
 
         if adapter is None:
-            logger.warning(
-                "Replayer: no adapter found for IDE client %r — skipping ide_project_open", client
-            )
+            logger.warning("  Result: SKIPPED - no adapter found for IDE client %r", client)
             print(f"         [warn] No adapter for '{client}' — skipping")
             return
 
         if adapter.open_project(path):
+            logger.info("  Result: SUCCESS - opened %r in %s", path, client)
             print(f"         [ok] Opened {path!r} in {client}")
         else:
-            logger.warning(
-                "Replayer: ide_project_open via %r failed for %r", client, path
-            )
+            logger.warning("  Result: FAILED - ide_project_open via %r failed for %r", client, path)
             print(f"         [warn] Failed to open {path!r} in '{client}' — continuing")
             return
 
@@ -239,6 +334,62 @@ class Replayer:
     # ------------------------------------------------------------------
     # Terminal action handlers
     # ------------------------------------------------------------------
+
+    def _handle_terminal_session_consolidated(self, index: int, session_id: str, session: dict) -> None:
+        """Replay a consolidated terminal session.
+        
+        Opens ONE terminal in the start directory and runs all recorded commands in sequence.
+        """
+        from ctx.adapters.wm.app_names import TERMINAL_APP_NAMES
+        
+        # Mark this session as opened so we skip subsequent dir_change and command actions
+        self._opened_terminal_sessions.add(session_id)
+        
+        app = session.get("app", "")
+        start_directory = session.get("start_directory", "")
+        commands = session.get("commands", [])
+        workspace = session.get("workspace")
+        
+        print(f"  [{index:>3}] terminal_session: app={app!r} start_dir={start_directory!r}"
+              + (f" workspace={workspace!r}" if workspace else ""))
+        if commands:
+            print(f"         Commands to replay: {len(commands)}")
+            for cmd in commands[:5]:  # Show first 5
+                print(f"           - {cmd}")
+            if len(commands) > 5:
+                print(f"           ... and {len(commands) - 5} more")
+        
+        registry = self._get_terminal_registry()
+        adapter = registry.get_adapter(app)
+        
+        if adapter is None:
+            logger.warning("  Result: SKIPPED - no adapter for terminal %r", app)
+            print(f"         [warn] No adapter for '{app}' — skipping")
+            return
+        
+        # Open terminal with commands using the new method
+        if hasattr(adapter, 'open_with_commands'):
+            success = adapter.open_with_commands(start_directory, commands)
+        else:
+            # Fallback for adapters without open_with_commands
+            success = adapter.open_in_dir(start_directory)
+        
+        if success:
+            logger.info("  Result: SUCCESS - opened terminal in %r with %d commands via %s", 
+                       start_directory, len(commands), app)
+            print(f"         [ok] Opened terminal and ran {len(commands)} commands")
+        else:
+            logger.warning("  Result: FAILED - terminal session via %r failed", app)
+            print(f"         [warn] Failed to open terminal — continuing")
+            return
+        
+        # Handle AeroSpace workspace placement
+        if workspace:
+            aerospace = self._get_aerospace()
+            app_os_name = TERMINAL_APP_NAMES.get(app)
+            if aerospace and app_os_name:
+                time.sleep(_AEROSPACE_SETTLE)
+                self._place_in_workspace(app_os_name, workspace)
 
     def _handle_terminal_session_open(self, index: int, action: dict[str, Any]) -> None:
         """Replay a terminal_session_open action using the appropriate adapter."""
@@ -253,7 +404,7 @@ class Replayer:
         adapter = registry.get_adapter(app)
 
         if adapter is None:
-            logger.warning("Replayer: no adapter for terminal %r — skipping", app)
+            logger.warning("  Result: SKIPPED - no adapter for terminal %r", app)
             print(f"         [warn] No adapter for '{app}' — skipping")
             return
 
@@ -265,9 +416,10 @@ class Replayer:
             before_ids = set(aerospace.get_app_window_ids(app_os_name))
 
         if adapter.open_in_dir(directory):
+            logger.info("  Result: SUCCESS - opened terminal in %r via %s", directory, app)
             print(f"         [ok] Opened terminal in {directory!r} via {app}")
         else:
-            logger.warning("Replayer: terminal_session_open via %r failed for %r", app, directory)
+            logger.warning("  Result: FAILED - terminal_session_open via %r failed for %r", app, directory)
             print(f"         [warn] Failed to open terminal in {directory!r} — continuing")
             return
 
@@ -279,7 +431,63 @@ class Replayer:
             target_ids = new_ids or after_ids
             for wid in target_ids:
                 aerospace.move_window_to_workspace(wid, workspace)
+                logger.info("  Result: Moved window %d to workspace %s", wid, workspace)
                 break
+
+    def _handle_terminal_dir_change(self, index: int, action: dict[str, Any]) -> None:
+        """Handle a terminal_dir_change action.
+        
+        This represents a directory change within an existing session.
+        We treat it like opening a new session in that directory.
+        """
+        from ctx.adapters.wm.app_names import TERMINAL_APP_NAMES
+        app = action.get("app", "")
+        directory = action.get("directory", "")
+        previous_dir = action.get("previous_directory", "")
+        workspace = action.get("workspace")
+        print(f"  [{index:>3}] terminal_dir_change: app={app!r} {previous_dir!r} -> {directory!r}"
+              + (f" workspace={workspace!r}" if workspace else ""))
+
+        registry = self._get_terminal_registry()
+        adapter = registry.get_adapter(app)
+
+        if adapter is None:
+            logger.warning("  Result: SKIPPED - no adapter for terminal %r", app)
+            print(f"         [warn] No adapter for '{app}' — skipping")
+            return
+
+        # Open a new terminal in the target directory
+        # (We can't change directory in an existing session remotely)
+        if adapter.open_in_dir(directory):
+            logger.info("  Result: SUCCESS - opened terminal in %r via %s", directory, app)
+            print(f"         [ok] Opened terminal in {directory!r} via {app}")
+        else:
+            logger.warning("  Result: FAILED - terminal_dir_change via %r failed for %r", app, directory)
+            print(f"         [warn] Failed to open terminal in {directory!r} — continuing")
+
+    def _handle_terminal_command(self, index: int, action: dict[str, Any]) -> None:
+        """Handle a terminal_command action.
+        
+        Commands are displayed but NOT auto-executed for safety.
+        The user can copy/paste them into their terminal.
+        """
+        cmd = action.get("cmd", "")
+        directory = action.get("directory", "")
+        session_id = action.get("session_id", "")
+        
+        # Skip empty commands
+        if not cmd:
+            return
+        
+        # Skip cd commands (directory changes are handled by terminal_session_open)
+        if cmd.strip().startswith("cd ") or cmd.strip() == "cd":
+            logger.debug("  Skipping cd command: %s", cmd)
+            return
+        
+        # Display the command for manual execution
+        print(f"  [{index:>3}] terminal_command: {cmd}")
+        print(f"         [info] Directory: {directory}")
+        logger.info("  terminal_command: cmd=%r directory=%r session=%r", cmd, directory, session_id)
 
     # ------------------------------------------------------------------
     # Generic app handler
@@ -294,10 +502,12 @@ class Replayer:
 
         result = subprocess.run(["open", "-a", app_name], capture_output=True)
         if result.returncode != 0:
-            logger.warning("Replayer: could not open app %r", app_name)
+            logger.warning("  Result: FAILED - could not open app %r (stderr: %s)", 
+                          app_name, result.stderr.decode().strip())
             print(f"         [warn] Could not open {app_name!r} — app may not be installed")
             return
 
+        logger.info("  Result: SUCCESS - launched %r", app_name)
         print(f"         [ok] Launched {app_name!r}")
 
         if workspace:
