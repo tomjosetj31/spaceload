@@ -11,6 +11,7 @@ from ctx.adapters.vpn.wireguard import WireGuardAdapter
 from ctx.adapters.vpn.cisco import CiscoAnyConnectAdapter
 from ctx.adapters.vpn.mullvad import MullvadAdapter
 from ctx.adapters.vpn.openvpn import OpenVPNAdapter
+from ctx.adapters.vpn.tunnelblick import TunnelblickAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class VPNAdapterRegistry:
             CiscoAnyConnectAdapter(),
             MullvadAdapter(),
             OpenVPNAdapter(),
+            TunnelblickAdapter(),
         ]
 
     def available_adapters(self) -> list[VPNAdapter]:

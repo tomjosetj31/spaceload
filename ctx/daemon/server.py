@@ -32,6 +32,8 @@ from ctx.adapters.vpn.registry import VPNAdapterRegistry
 from ctx.adapters.browser.registry import BrowserAdapterRegistry
 from ctx.adapters.ide.registry import IDEAdapterRegistry
 from ctx.adapters.terminal.registry import TerminalAdapterRegistry
+from ctx.adapters.wm.registry import WorkspaceManagerRegistry
+from ctx.adapters.wm.app_names import BROWSER_APP_NAMES, IDE_APP_NAMES, TERMINAL_APP_NAMES
 
 _CTX_DIR = Path.home() / ".ctx"
 _SOCKET_PATH = _CTX_DIR / "daemon.sock"
@@ -192,14 +194,16 @@ class BrowserPoller:
             logger.warning("BrowserPoller: could not initialise registry: %s", exc)
             return
 
+        aerospace = WorkspaceManagerRegistry().detect_active()
+
         while not self._stop_event.is_set():
             try:
-                self._poll(registry)
+                self._poll(registry, aerospace)
             except Exception as exc:
                 logger.warning("BrowserPoller: poll error: %s", exc)
             self._stop_event.wait(timeout=self._poll_interval)
 
-    def _poll(self, registry) -> None:
+    def _poll(self, registry, aerospace: object | None) -> None:
         """Check current browser tabs and emit events for newly opened URLs."""
         for adapter in registry.available_adapters():
             current_urls = set(adapter.get_open_tabs())
@@ -209,14 +213,19 @@ class BrowserPoller:
                 continue
             new_urls = current_urls - self._known_tabs[adapter.name]
             for url in sorted(new_urls):
-                self._actions.append(
-                    {
-                        "type": "browser_tab_open",
-                        "browser": adapter.name,
-                        "url": url,
-                        "timestamp": _now_iso(),
-                    }
-                )
+                action: dict = {
+                    "type": "browser_tab_open",
+                    "browser": adapter.name,
+                    "url": url,
+                    "timestamp": _now_iso(),
+                }
+                if aerospace is not None:
+                    app_name = BROWSER_APP_NAMES.get(adapter.name)
+                    if app_name:
+                        ws = aerospace.get_app_workspace(app_name)
+                        if ws:
+                            action["workspace"] = ws
+                self._actions.append(action)
             self._known_tabs[adapter.name] = current_urls
 
 
@@ -269,14 +278,16 @@ class IDEPoller:
             logger.warning("IDEPoller: could not initialise registry: %s", exc)
             return
 
+        aerospace = WorkspaceManagerRegistry().detect_active()
+
         while not self._stop_event.is_set():
             try:
-                self._poll(registry)
+                self._poll(registry, aerospace)
             except Exception as exc:
                 logger.warning("IDEPoller: poll error: %s", exc)
             self._stop_event.wait(timeout=self._poll_interval)
 
-    def _poll(self, registry) -> None:
+    def _poll(self, registry, aerospace: object | None) -> None:
         """Check current IDE projects and emit events for newly opened paths."""
         for adapter in registry.available_adapters():
             current_paths = set(adapter.get_open_projects())
@@ -286,14 +297,19 @@ class IDEPoller:
                 continue
             new_paths = current_paths - self._known_projects[adapter.name]
             for path in sorted(new_paths):
-                self._actions.append(
-                    {
-                        "type": "ide_project_open",
-                        "client": adapter.name,
-                        "path": path,
-                        "timestamp": _now_iso(),
-                    }
-                )
+                action: dict = {
+                    "type": "ide_project_open",
+                    "client": adapter.name,
+                    "path": path,
+                    "timestamp": _now_iso(),
+                }
+                if aerospace is not None:
+                    app_name = IDE_APP_NAMES.get(adapter.name)
+                    if app_name:
+                        ws = aerospace.get_app_workspace(app_name)
+                        if ws:
+                            action["workspace"] = ws
+                self._actions.append(action)
             self._known_projects[adapter.name] = current_paths
 
 
@@ -346,14 +362,16 @@ class TerminalPoller:
             logger.warning("TerminalPoller: could not initialise registry: %s", exc)
             return
 
+        aerospace = WorkspaceManagerRegistry().detect_active()
+
         while not self._stop_event.is_set():
             try:
-                self._poll(registry)
+                self._poll(registry, aerospace)
             except Exception as exc:
                 logger.warning("TerminalPoller: poll error: %s", exc)
             self._stop_event.wait(timeout=self._poll_interval)
 
-    def _poll(self, registry) -> None:
+    def _poll(self, registry, aerospace: object | None) -> None:
         """Check current terminal sessions and emit events for newly opened dirs."""
         for adapter in registry.available_adapters():
             current_dirs = set(adapter.get_open_dirs())
@@ -363,15 +381,153 @@ class TerminalPoller:
                 continue
             new_dirs = current_dirs - self._known_dirs[adapter.name]
             for path in sorted(new_dirs):
-                self._actions.append(
-                    {
-                        "type": "terminal_session_open",
-                        "app": adapter.name,
-                        "directory": path,
-                        "timestamp": _now_iso(),
-                    }
-                )
+                action: dict = {
+                    "type": "terminal_session_open",
+                    "app": adapter.name,
+                    "directory": path,
+                    "timestamp": _now_iso(),
+                }
+                if aerospace is not None:
+                    app_name = TERMINAL_APP_NAMES.get(adapter.name)
+                    if app_name:
+                        ws = aerospace.get_app_workspace(app_name)
+                        if ws:
+                            action["workspace"] = ws
+                self._actions.append(action)
             self._known_dirs[adapter.name] = current_dirs
+
+
+def _get_running_foreground_apps() -> set[str]:
+    """Return names of all visible (foreground) apps via AppleScript.
+
+    Used as a fallback when no tiling WM is available.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "osascript", "-e",
+                "tell application \"System Events\" to return name of every process"
+                " whose background only is false",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return set()
+        return {name.strip() for name in result.stdout.split(",")}
+    except (subprocess.SubprocessError, OSError):
+        return set()
+
+
+class WindowSnapshotPoller:
+    """Tracks ANY application that opens during recording.
+
+    Two modes:
+    - **WM mode** (AeroSpace / yabai present): uses ``wm.list_windows()`` to
+      detect new windows with their workspace labels.
+    - **Fallback mode** (no WM): polls the macOS process list via AppleScript
+      and records new foreground apps without workspace information.
+
+    Apps already handled by richer adapters (Chrome, Safari, VS Code, iTerm2,
+    etc.) are skipped in both modes to avoid duplicate events.
+    """
+
+    # OS-level app names handled by specific pollers — skip them here
+    _MANAGED_OS_NAMES: frozenset[str] = frozenset({
+        # Browsers (BrowserPoller)
+        "Google Chrome", "Chromium", "Safari", "Arc",
+        # IDEs (IDEPoller)
+        "Code", "Cursor", "Zed",
+        # Terminals (TerminalPoller)
+        "iTerm2", "Terminal", "Warp", "kitty",
+    })
+
+    def __init__(
+        self,
+        actions: list[dict],
+        poll_interval: float = 2.0,
+    ) -> None:
+        self._actions = actions
+        self._poll_interval = poll_interval
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        # WM mode state
+        self._seen_ids: set[int] = set()
+        self._wm: object | None = None
+        # Fallback mode state
+        self._seen_apps: set[str] = set()
+
+    def start(self) -> None:
+        self._thread = threading.Thread(
+            target=self._run, daemon=True, name="window-snapshot-poller"
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=self._poll_interval + 1)
+
+    def _run(self) -> None:
+        self._wm = WorkspaceManagerRegistry().detect_active()
+
+        if self._wm is not None:
+            # WM mode — seed with currently open windows
+            try:
+                initial = self._wm.list_windows()
+                self._seen_ids = {w.window_id for w in initial}
+            except Exception as exc:
+                logger.warning("WindowSnapshotPoller: could not get initial window list: %s", exc)
+            logger.info("WindowSnapshotPoller: WM mode (%s)", type(self._wm).__name__)
+        else:
+            # Fallback mode — seed with currently running apps
+            self._seen_apps = _get_running_foreground_apps()
+            logger.info("WindowSnapshotPoller: fallback mode (no WM detected)")
+
+        while not self._stop_event.is_set():
+            try:
+                if self._wm is not None:
+                    self._poll_wm()
+                else:
+                    self._poll_fallback()
+            except Exception as exc:
+                logger.warning("WindowSnapshotPoller: poll error: %s", exc)
+            self._stop_event.wait(timeout=self._poll_interval)
+
+    def _poll_wm(self) -> None:
+        """WM mode: detect new windows and record app + workspace."""
+        windows = self._wm.list_windows()
+        for w in windows:
+            if w.window_id in self._seen_ids:
+                continue
+            self._seen_ids.add(w.window_id)
+            if w.app_name in self._MANAGED_OS_NAMES:
+                continue
+            action: dict = {
+                "type": "app_open",
+                "app_name": w.app_name,
+                "workspace": w.workspace,
+                "timestamp": _now_iso(),
+            }
+            self._actions.append(action)
+            logger.info("WindowSnapshotPoller: new app — %r workspace=%s", w.app_name, w.workspace)
+
+    def _poll_fallback(self) -> None:
+        """Fallback mode: detect new foreground apps, no workspace info."""
+        current = _get_running_foreground_apps()
+        new_apps = current - self._seen_apps
+        for app_name in sorted(new_apps):
+            if app_name in self._MANAGED_OS_NAMES:
+                continue
+            action: dict = {
+                "type": "app_open",
+                "app_name": app_name,
+                "timestamp": _now_iso(),
+            }
+            self._actions.append(action)
+            logger.info("WindowSnapshotPoller: new app (no WM) — %r", app_name)
+        self._seen_apps = current
 
 
 class RecorderDaemon:
@@ -388,6 +544,7 @@ class RecorderDaemon:
         self._browser_poller: BrowserPoller | None = None
         self._ide_poller: IDEPoller | None = None
         self._terminal_poller: TerminalPoller | None = None
+        self._window_poller: WindowSnapshotPoller | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -431,6 +588,9 @@ class RecorderDaemon:
 
         self._terminal_poller = TerminalPoller(self._actions)
         self._terminal_poller.start()
+
+        self._window_poller = WindowSnapshotPoller(self._actions)
+        self._window_poller.start()
 
         self._loop()
 
@@ -533,6 +693,8 @@ class RecorderDaemon:
             self._ide_poller.stop()
         if self._terminal_poller is not None:
             self._terminal_poller.stop()
+        if self._window_poller is not None:
+            self._window_poller.stop()
 
         if self._sock:
             try:
