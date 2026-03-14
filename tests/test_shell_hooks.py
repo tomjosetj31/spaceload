@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from ctx.shell.hooks import get_hook_script, ZSH_HOOK, BASH_HOOK
+from loadout.shell.hooks import get_hook_script, ZSH_HOOK, BASH_HOOK
 
 
 class TestGetHookScript:
     def test_zsh_hook(self):
         script = get_hook_script("zsh")
         assert script == ZSH_HOOK
-        assert "_ctx_preexec" in script
+        assert "_loadout_preexec" in script
         assert "add-zsh-hook preexec" in script
         assert "nc -U" in script  # Uses netcat for Unix socket
     
@@ -22,7 +22,7 @@ class TestGetHookScript:
     def test_bash_hook(self):
         script = get_hook_script("bash")
         assert script == BASH_HOOK
-        assert "_ctx_debug_trap" in script
+        assert "_loadout_debug_trap" in script
         assert 'trap' in script
         assert "nc -U" in script
     
@@ -40,7 +40,7 @@ class TestGetHookScript:
 
 class TestZshHookContent:
     def test_checks_socket_exists(self):
-        assert '[[ -S "$_ctx_socket" ]]' in ZSH_HOOK
+        assert '[[ -S "$_loadout_socket" ]]' in ZSH_HOOK
     
     def test_captures_tty(self):
         assert "tty" in ZSH_HOOK
@@ -59,7 +59,7 @@ class TestZshHookContent:
 
 class TestBashHookContent:
     def test_checks_socket_exists(self):
-        assert '[[ -S "$_ctx_socket" ]]' in BASH_HOOK
+        assert '[[ -S "$_loadout_socket" ]]' in BASH_HOOK
     
     def test_captures_tty(self):
         assert "tty" in BASH_HOOK

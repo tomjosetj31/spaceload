@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ctx"
+name = "loadout"
 version = "0.1.0"
 description = "Workspace Context Switcher — record and replay developer workspace setups"
 readme = "README.md"
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ctx = "ctx.cli.main:cli"
+loadout = "loadout.cli.main:cli"
 
 [project.optional-dependencies]
 dev = [
@@ -31,7 +31,7 @@ all = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["ctx*"]
+include = ["loadout*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

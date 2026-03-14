@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ctx.daemon.server import BrowserPoller
-from ctx.replayer.replayer import Replayer
+from loadout.daemon.server import BrowserPoller
+from loadout.replayer.replayer import Replayer
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ class TestBrowserPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.available_adapters.side_effect = fake_available_adapters
 
-        with patch("ctx.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.4)  # Wait for stabilization
             poller.stop()
@@ -75,7 +75,7 @@ class TestBrowserPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.available_adapters.return_value = [adapter]
 
-        with patch("ctx.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.08)  # only one poll cycle
             poller.stop()
@@ -93,7 +93,7 @@ class TestBrowserPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.available_adapters.return_value = [adapter]
 
-        with patch("ctx.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.3)
             poller.stop()
@@ -122,7 +122,7 @@ class TestBrowserPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.available_adapters.side_effect = fake_available_adapters
 
-        with patch("ctx.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.4)  # Wait for stabilization
             poller.stop()
@@ -143,7 +143,7 @@ class TestBrowserPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.available_adapters.side_effect = RuntimeError("osascript error")
 
-        with patch("ctx.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.2)
             poller.stop()
@@ -176,7 +176,7 @@ class TestBrowserPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.available_adapters.side_effect = fake_available_adapters
 
-        with patch("ctx.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.BrowserAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.4)  # Wait for stabilization
             poller.stop()

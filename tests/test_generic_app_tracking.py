@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ctx.adapters.vpn.tunnelblick import TunnelblickAdapter
-from ctx.adapters.wm.base import WMWindow
+from loadout.adapters.vpn.tunnelblick import TunnelblickAdapter
+from loadout.adapters.wm.base import WMWindow
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +33,7 @@ def _proc(stdout="", returncode=0):
 class TestWindowSnapshotPoller:
     def _make_poller(self):
         # Import here so patches in individual tests apply cleanly
-        from ctx.daemon.server import WindowSnapshotPoller
+        from loadout.daemon.server import WindowSnapshotPoller
         actions = []
         poller = WindowSnapshotPoller(actions, poll_interval=0.05)
         return poller, actions
@@ -70,7 +70,7 @@ class TestWindowSnapshotPoller:
 
     def test_all_managed_apps_skipped(self):
         """Every app in _MANAGED_OS_NAMES is ignored."""
-        from ctx.daemon.server import WindowSnapshotPoller
+        from loadout.daemon.server import WindowSnapshotPoller
         poller, actions = self._make_poller()
         mock_wm = MagicMock()
         poller._wm = mock_wm
@@ -129,7 +129,7 @@ class TestWindowSnapshotPoller:
         poller._wm = None
         poller._seen_apps = {"Finder", "Safari"}  # pre-existing
 
-        with patch("ctx.daemon.server._get_running_foreground_apps",
+        with patch("loadout.daemon.server._get_running_foreground_apps",
                    return_value={"Finder", "Safari", "Slack"}):
             poller._poll_fallback()
 
@@ -143,7 +143,7 @@ class TestWindowSnapshotPoller:
         poller._wm = None
         poller._seen_apps = set()
 
-        with patch("ctx.daemon.server._get_running_foreground_apps",
+        with patch("loadout.daemon.server._get_running_foreground_apps",
                    return_value={"Google Chrome", "Slack"}):
             poller._poll_fallback()
 
@@ -155,7 +155,7 @@ class TestWindowSnapshotPoller:
         poller._wm = None
         poller._seen_apps = set()
 
-        with patch("ctx.daemon.server._get_running_foreground_apps",
+        with patch("loadout.daemon.server._get_running_foreground_apps",
                    return_value={"Slack", "Teams"}):
             poller._poll_fallback()
             poller._poll_fallback()  # second poll — same apps, nothing new
@@ -274,7 +274,7 @@ class TestTunnelblickAdapter:
 
 class TestReplayerAppOpen:
     def _make_replayer(self, actions):
-        from ctx.replayer.replayer import Replayer
+        from loadout.replayer.replayer import Replayer
         return Replayer("test-ws", actions)
 
     def test_app_open_launches_app(self, capsys):
@@ -291,8 +291,8 @@ class TestReplayerAppOpen:
         mock_wm = MagicMock()
         mock_wm.move_app_to_workspace.return_value = True
         with patch("subprocess.run", return_value=_proc(returncode=0)), \
-             patch("ctx.replayer.replayer.time") as mock_time, \
-             patch("ctx.adapters.wm.registry.WorkspaceManagerRegistry") as mock_reg:
+             patch("loadout.replayer.replayer.time") as mock_time, \
+             patch("loadout.adapters.wm.registry.WorkspaceManagerRegistry") as mock_reg:
             mock_reg.return_value.detect_active.return_value = mock_wm
             r._aerospace = mock_wm
             r.replay()

@@ -6,12 +6,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ctx.adapters.browser.base import BrowserAdapter, TabSet
-from ctx.adapters.browser.chrome import ChromeAdapter
-from ctx.adapters.browser.safari import SafariAdapter
-from ctx.adapters.browser.arc import ArcAdapter
-from ctx.adapters.browser.firefox import FirefoxAdapter
-from ctx.adapters.browser.registry import BrowserAdapterRegistry
+from loadout.adapters.browser.base import BrowserAdapter, TabSet
+from loadout.adapters.browser.chrome import ChromeAdapter
+from loadout.adapters.browser.safari import SafariAdapter
+from loadout.adapters.browser.arc import ArcAdapter
+from loadout.adapters.browser.firefox import FirefoxAdapter
+from loadout.adapters.browser.registry import BrowserAdapterRegistry
 
 
 # ---------------------------------------------------------------------------

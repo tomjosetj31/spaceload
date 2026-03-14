@@ -1,4 +1,4 @@
-# ctx — Workspace Context Switcher
+# Loadout — Workspace Context Switcher
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -8,7 +8,7 @@ A macOS CLI tool that records and replays developer workspace setups: browser ta
 
 ## Overview
 
-`ctx` lets you snapshot your entire development environment and restore it later with a single command. Stop context-switching overhead and get back into flow faster.
+`loadout` lets you snapshot your entire development environment and restore it later with a single command. Stop context-switching overhead and get back into flow faster.
 
 ## Features
 
@@ -20,8 +20,8 @@ A macOS CLI tool that records and replays developer workspace setups: browser ta
 ## Installation
 
 ```bash
-git clone https://github.com/tomjosetj31/ctx
-cd ctx
+git clone https://github.com/tomjosetj31/loadout
+cd loadout
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -31,39 +31,39 @@ pip install -e .
 
 ```bash
 # Start recording a workspace session
-ctx record my-project
+loadout record my-project
 
 # ... open your browser tabs, connect VPN, open IDE, etc. ...
 
 # Stop recording and save the session
-ctx stop
+loadout stop
 
 # Replay a saved workspace
-ctx run my-project
+loadout run my-project
 
 # List all saved workspaces
-ctx list
+loadout list
 
 # Inspect a workspace as YAML
-ctx show my-project
+loadout show my-project
 
 # Delete a workspace
-ctx delete my-project
+loadout delete my-project
 
 # Import a workspace from a YAML file
-ctx import my-project.yaml
+loadout import my-project.yaml
 ```
 
 ### Recording Options
 
 ```bash
 # Record only new things opened during recording (default)
-ctx record my-project
+loadout record my-project
 
 # Also capture everything already open when recording starts
-ctx record my-project --include-open
+loadout record my-project --include-open
 # or
-ctx record my-project -i
+loadout record my-project -i
 ```
 
 ## Supported Integrations
@@ -103,10 +103,10 @@ To track terminal commands during recording, add the shell hook to your shell co
 
 ```bash
 # For zsh (~/.zshrc):
-eval "$(ctx shell-hook zsh)"
+eval "$(loadout shell-hook zsh)"
 
 # For bash (~/.bashrc):
-eval "$(ctx shell-hook bash)"
+eval "$(loadout shell-hook bash)"
 ```
 
 Then restart your shell or run `source ~/.zshrc`.
@@ -127,23 +127,23 @@ The recorder automatically filters out:
 
 ## Logs & Debugging
 
-Logs are written to `~/.ctx/` for debugging:
+Logs are written to `~/.loadout/` for debugging:
 
 ```bash
 # Daemon log (recording)
-cat ~/.ctx/daemon.log
+cat ~/.loadout/daemon.log
 
 # Replay log
-cat ~/.ctx/replay.log
+cat ~/.loadout/replay.log
 ```
 
 ## Architecture
 
-- **CLI** (`ctx/cli/`) — Click-based command interface
-- **Daemon** (`ctx/daemon/`) — Unix socket server that records actions in the background
-- **Store** (`ctx/store/`) — SQLite-backed persistence layer with YAML export/import
-- **Replayer** (`ctx/replayer/`) — Replays recorded action sequences
-- **Adapters** (`ctx/adapters/`) — Per-integration plugins (browser, VPN, IDE, terminal)
+- **CLI** (`loadout/cli/`) — Click-based command interface
+- **Daemon** (`loadout/daemon/`) — Unix socket server that records actions in the background
+- **Store** (`loadout/store/`) — SQLite-backed persistence layer with YAML export/import
+- **Replayer** (`loadout/replayer/`) — Replays recorded action sequences
+- **Adapters** (`loadout/adapters/`) — Per-integration plugins (browser, VPN, IDE, terminal)
 
 ## Tech Stack
 

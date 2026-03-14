@@ -7,16 +7,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ctx.adapters.aerospace.adapter import (
+from loadout.adapters.aerospace.adapter import (
     AeroSpaceAdapter,
     AeroWindow,
     BROWSER_APP_NAMES,
     IDE_APP_NAMES,
     TERMINAL_APP_NAMES,
 )
-from ctx.adapters.terminal.base import TerminalSession
-from ctx.daemon.server import BrowserPoller, IDEPoller, TerminalPoller
-from ctx.replayer.replayer import Replayer
+from loadout.adapters.terminal.base import TerminalSession
+from loadout.daemon.server import BrowserPoller, IDEPoller, TerminalPoller
+from loadout.replayer.replayer import Replayer
 
 
 # ---------------------------------------------------------------------------
@@ -198,8 +198,8 @@ class TestBrowserPollerWorkspaceEnrichment:
         mock_wm = MagicMock()
         mock_wm.get_app_workspace.return_value = "C"
 
-        with patch("ctx.daemon.server.BrowserAdapterRegistry", return_value=mock_registry), \
-             patch("ctx.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
+        with patch("loadout.daemon.server.BrowserAdapterRegistry", return_value=mock_registry), \
+             patch("loadout.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
             mock_reg_cls.return_value.detect_active.return_value = mock_wm
             poller.start()
             time.sleep(0.4)  # Wait for stabilization
@@ -230,8 +230,8 @@ class TestBrowserPollerWorkspaceEnrichment:
         mock_registry = MagicMock()
         mock_registry.available_adapters.side_effect = fake_available_adapters
 
-        with patch("ctx.daemon.server.BrowserAdapterRegistry", return_value=mock_registry), \
-             patch("ctx.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
+        with patch("loadout.daemon.server.BrowserAdapterRegistry", return_value=mock_registry), \
+             patch("loadout.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
             mock_reg_cls.return_value.detect_active.return_value = None
             poller.start()
             time.sleep(0.4)  # Wait for stabilization
@@ -266,8 +266,8 @@ class TestIDEPollerWorkspaceEnrichment:
         mock_wm = MagicMock()
         mock_wm.get_app_workspace.return_value = "4"
 
-        with patch("ctx.daemon.server.IDEAdapterRegistry", return_value=mock_registry), \
-             patch("ctx.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
+        with patch("loadout.daemon.server.IDEAdapterRegistry", return_value=mock_registry), \
+             patch("loadout.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
             mock_reg_cls.return_value.detect_active.return_value = mock_wm
             poller.start()
             time.sleep(0.3)
@@ -304,8 +304,8 @@ class TestTerminalPollerWorkspaceEnrichment:
         mock_wm = MagicMock()
         mock_wm.get_app_workspace.return_value = "3"
 
-        with patch("ctx.daemon.server.TerminalAdapterRegistry", return_value=mock_registry), \
-             patch("ctx.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
+        with patch("loadout.daemon.server.TerminalAdapterRegistry", return_value=mock_registry), \
+             patch("loadout.daemon.server.WorkspaceManagerRegistry") as mock_reg_cls:
             mock_reg_cls.return_value.detect_active.return_value = mock_wm
             poller.start()
             time.sleep(0.3)
@@ -341,7 +341,7 @@ class TestReplayerWorkspacePlacement:
         replayer._browser_registry = mock_browser_registry
         replayer._aerospace = mock_aerospace
 
-        with patch("ctx.replayer.replayer.time.sleep"):
+        with patch("loadout.replayer.replayer.time.sleep"):
             replayer.replay()
 
         mock_aerospace.move_app_to_workspace.assert_called_once_with("Google Chrome", "C")
@@ -390,7 +390,7 @@ class TestReplayerWorkspacePlacement:
         replayer._ide_registry = mock_ide_registry
         replayer._aerospace = mock_aerospace
 
-        with patch("ctx.replayer.replayer.time.sleep"):
+        with patch("loadout.replayer.replayer.time.sleep"):
             replayer.replay()
 
         mock_aerospace.move_app_to_workspace.assert_called_once_with("Cursor", "4")
@@ -417,7 +417,7 @@ class TestReplayerWorkspacePlacement:
         replayer._terminal_registry = mock_terminal_registry
         replayer._aerospace = mock_aerospace
 
-        with patch("ctx.replayer.replayer.time.sleep"):
+        with patch("loadout.replayer.replayer.time.sleep"):
             replayer.replay()
 
         # Should move only the new window (200) to workspace 3

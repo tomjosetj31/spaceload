@@ -9,9 +9,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ctx.adapters.vpn.base import VPNState
-from ctx.daemon.server import VPNPoller
-from ctx.replayer.replayer import Replayer
+from loadout.adapters.vpn.base import VPNState
+from loadout.daemon.server import VPNPoller
+from loadout.replayer.replayer import Replayer
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +55,7 @@ class TestVPNPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.detect_active.side_effect = fake_detect_active
 
-        with patch("ctx.daemon.server.VPNAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.VPNAdapterRegistry", return_value=mock_registry):
             poller.start()
             # Wait long enough for at least 2 poll cycles
             time.sleep(0.3)
@@ -92,7 +92,7 @@ class TestVPNPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.detect_active.side_effect = fake_detect_active
 
-        with patch("ctx.daemon.server.VPNAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.VPNAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.3)
             poller.stop()
@@ -114,7 +114,7 @@ class TestVPNPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.detect_active.return_value = (mock_adapter, state)
 
-        with patch("ctx.daemon.server.VPNAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.VPNAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.3)
             poller.stop()
@@ -130,7 +130,7 @@ class TestVPNPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.detect_active.return_value = None
 
-        with patch("ctx.daemon.server.VPNAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.VPNAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.3)
             poller.stop()
@@ -157,7 +157,7 @@ class TestVPNPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.detect_active.side_effect = fake_detect_active
 
-        with patch("ctx.daemon.server.VPNAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.VPNAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.3)
             poller.stop()
@@ -244,7 +244,7 @@ class TestReplayerVPNActions:
         replayer = Replayer("test-workspace", actions)
         replayer._registry = mock_registry
 
-        with patch("ctx.replayer.replayer.time.sleep"):
+        with patch("loadout.replayer.replayer.time.sleep"):
             replayer.replay()
 
         captured = capsys.readouterr()

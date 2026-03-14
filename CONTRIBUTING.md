@@ -1,6 +1,6 @@
-# Contributing to ctx
+# Contributing to Loadout
 
-Thank you for your interest in contributing to `ctx`! This document covers everything you need to get started.
+Thank you for your interest in contributing to `loadout`! This document covers everything you need to get started.
 
 ## Table of Contents
 
@@ -22,14 +22,14 @@ Thank you for your interest in contributing to `ctx`! This document covers every
 2. **Clone** your fork locally:
 
    ```bash
-   git clone https://github.com/<your-username>/ctx
-   cd ctx
+   git clone https://github.com/tomjosetj31/loadout
+   cd loadout
    ```
 
 3. Add the upstream remote so you can pull in future changes:
 
    ```bash
-   git remote add upstream https://github.com/tomjosetj31/ctx
+   git remote add upstream https://github.com/tomjosetj31/loadout
    ```
 
 ---
@@ -37,8 +37,8 @@ Thank you for your interest in contributing to `ctx`! This document covers every
 ## Project Structure
 
 ```
-ctx/
-├── ctx/
+loadout/
+├── loadout/
 │   ├── adapters/       # Per-integration plugins (browser, VPN, IDE, terminal)
 │   ├── cli/            # Click-based command interface
 │   ├── daemon/         # Unix socket server that records actions in the background
@@ -122,11 +122,11 @@ Documentation fixes and clarifications are always welcome. Edit the relevant `.m
 
 ## Adding a New Adapter
 
-Adapters live in `ctx/adapters/` and teach `ctx` how to record and replay a specific integration (browser, VPN, IDE, terminal app, etc.).
+Adapters live in `loadout/adapters/` and teach `loadout` how to record and replay a specific integration (browser, VPN, IDE, terminal app, etc.).
 
-1. Create a new file: `ctx/adapters/<name>_adapter.py`.
+1. Create a new file: `loadout/adapters/<name>_adapter.py`.
 2. Implement the adapter class — follow the pattern of an existing adapter (e.g. `chrome_adapter.py`) as a reference.
-3. Register the adapter in `ctx/adapters/__init__.py` (or wherever adapters are loaded).
+3. Register the adapter in `loadout/adapters/__init__.py` (or wherever adapters are loaded).
 4. Add tests under `tests/` covering at minimum record and replay paths.
 5. Document the new integration in `README.md` under **Supported Integrations**.
 
@@ -165,7 +165,7 @@ ruff format --check .
 
 ## Reporting Issues
 
-Use [GitHub Issues](https://github.com/tomjosetj31/ctx/issues) to report bugs or request features.
+Use [GitHub Issues](https://github.com/tomjosetj31/loadout/issues) to report bugs or request features.
 
 When reporting a bug please include:
 
@@ -173,8 +173,8 @@ When reporting a bug please include:
 - Python version (`python --version`).
 - Steps to reproduce.
 - Expected behaviour vs. actual behaviour.
-- Relevant log output from `~/.ctx/daemon.log` or `~/.ctx/replay.log`.
+- Relevant log output from `~/.loadout/daemon.log` or `~/.loadout/replay.log`.
 
 ---
 
-Thank you for helping make `ctx` better!
+Thank you for helping make `loadout` better!

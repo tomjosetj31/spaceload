@@ -8,13 +8,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ctx.adapters.vpn.base import VPNAdapter, VPNState, retry_connect
-from ctx.adapters.vpn.tailscale import TailscaleAdapter
-from ctx.adapters.vpn.wireguard import WireGuardAdapter
-from ctx.adapters.vpn.cisco import CiscoAnyConnectAdapter
-from ctx.adapters.vpn.mullvad import MullvadAdapter
-from ctx.adapters.vpn.openvpn import OpenVPNAdapter
-from ctx.adapters.vpn.registry import VPNAdapterRegistry
+from loadout.adapters.vpn.base import VPNAdapter, VPNState, retry_connect
+from loadout.adapters.vpn.tailscale import TailscaleAdapter
+from loadout.adapters.vpn.wireguard import WireGuardAdapter
+from loadout.adapters.vpn.cisco import CiscoAnyConnectAdapter
+from loadout.adapters.vpn.mullvad import MullvadAdapter
+from loadout.adapters.vpn.openvpn import OpenVPNAdapter
+from loadout.adapters.vpn.registry import VPNAdapterRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ class TestTailscaleAdapter:
         with patch("shutil.which", return_value="/usr/bin/tailscale"), \
              patch("subprocess.run", return_value=_make_completed_process(returncode=1)):
             # Patch time.sleep to skip delays
-            with patch("ctx.adapters.vpn.base.time.sleep"):
+            with patch("loadout.adapters.vpn.base.time.sleep"):
                 result = self.adapter.connect({})
         assert result is False
 
@@ -185,7 +185,7 @@ class TestWireGuardAdapter:
     def test_connect_failure_returns_false(self):
         with patch("shutil.which", return_value="/usr/bin/wg"), \
              patch("subprocess.run", return_value=_make_completed_process(returncode=1)):
-            with patch("ctx.adapters.vpn.base.time.sleep"):
+            with patch("loadout.adapters.vpn.base.time.sleep"):
                 result = self.adapter.connect({"interface": "wg0"})
         assert result is False
 
@@ -221,18 +221,18 @@ class TestCiscoAnyConnectAdapter:
         self.adapter = CiscoAnyConnectAdapter()
 
     def test_is_available_when_binary_exists(self, tmp_path):
-        with patch("ctx.adapters.vpn.cisco.Path") as mock_path_cls:
+        with patch("loadout.adapters.vpn.cisco.Path") as mock_path_cls:
             mock_path_cls.return_value.exists.return_value = True
             assert self.adapter.is_available() is True
 
     def test_is_available_when_binary_missing(self):
-        with patch("ctx.adapters.vpn.cisco.Path") as mock_path_cls:
+        with patch("loadout.adapters.vpn.cisco.Path") as mock_path_cls:
             mock_path_cls.return_value.exists.return_value = False
             assert self.adapter.is_available() is False
 
     def test_detect_connected(self):
         vpn_output = "state: Connected\nprofile: work-vpn\n"
-        with patch("ctx.adapters.vpn.cisco.Path") as mock_path_cls, \
+        with patch("loadout.adapters.vpn.cisco.Path") as mock_path_cls, \
              patch("subprocess.run", return_value=_make_completed_process(stdout=vpn_output)):
             mock_path_cls.return_value.exists.return_value = True
             state = self.adapter.detect()
@@ -242,7 +242,7 @@ class TestCiscoAnyConnectAdapter:
 
     def test_detect_not_connected(self):
         vpn_output = "state: Disconnected\n"
-        with patch("ctx.adapters.vpn.cisco.Path") as mock_path_cls, \
+        with patch("loadout.adapters.vpn.cisco.Path") as mock_path_cls, \
              patch("subprocess.run", return_value=_make_completed_process(stdout=vpn_output)):
             mock_path_cls.return_value.exists.return_value = True
             state = self.adapter.detect()
@@ -250,23 +250,23 @@ class TestCiscoAnyConnectAdapter:
         assert state.connected is False
 
     def test_detect_returns_none_when_not_available(self):
-        with patch("ctx.adapters.vpn.cisco.Path") as mock_path_cls:
+        with patch("loadout.adapters.vpn.cisco.Path") as mock_path_cls:
             mock_path_cls.return_value.exists.return_value = False
             state = self.adapter.detect()
         assert state is None
 
     def test_connect_success(self):
-        with patch("ctx.adapters.vpn.cisco.Path") as mock_path_cls, \
+        with patch("loadout.adapters.vpn.cisco.Path") as mock_path_cls, \
              patch("subprocess.run", return_value=_make_completed_process(returncode=0)):
             mock_path_cls.return_value.exists.return_value = True
             result = self.adapter.connect({"profile": "work"})
         assert result is True
 
     def test_connect_failure_returns_false(self):
-        with patch("ctx.adapters.vpn.cisco.Path") as mock_path_cls, \
+        with patch("loadout.adapters.vpn.cisco.Path") as mock_path_cls, \
              patch("subprocess.run", return_value=_make_completed_process(returncode=1, stdout="Error")):
             mock_path_cls.return_value.exists.return_value = True
-            with patch("ctx.adapters.vpn.base.time.sleep"):
+            with patch("loadout.adapters.vpn.base.time.sleep"):
                 result = self.adapter.connect({"profile": "work"})
         assert result is False
 
@@ -330,7 +330,7 @@ class TestMullvadAdapter:
     def test_connect_failure_returns_false(self):
         with patch("shutil.which", return_value="/usr/bin/mullvad"), \
              patch("subprocess.run", return_value=_make_completed_process(returncode=1)):
-            with patch("ctx.adapters.vpn.base.time.sleep"):
+            with patch("loadout.adapters.vpn.base.time.sleep"):
                 result = self.adapter.connect({})
         assert result is False
 
@@ -400,7 +400,7 @@ class TestOpenVPNAdapter:
     def test_connect_failure_returns_false(self):
         with patch("shutil.which", return_value="/usr/sbin/openvpn"), \
              patch("subprocess.run", return_value=_make_completed_process(returncode=1)):
-            with patch("ctx.adapters.vpn.base.time.sleep"):
+            with patch("loadout.adapters.vpn.base.time.sleep"):
                 result = self.adapter.connect({"config_file": "/etc/openvpn/client.conf"})
         assert result is False
 

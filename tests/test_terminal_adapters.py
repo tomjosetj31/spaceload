@@ -7,12 +7,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ctx.adapters.terminal.base import TerminalAdapter, TerminalSession
-from ctx.adapters.terminal.iterm2 import ITerm2Adapter
-from ctx.adapters.terminal.terminal_app import TerminalAppAdapter
-from ctx.adapters.terminal.warp import WarpAdapter
-from ctx.adapters.terminal.kitty import KittyAdapter
-from ctx.adapters.terminal.registry import TerminalAdapterRegistry
+from loadout.adapters.terminal.base import TerminalAdapter, TerminalSession
+from loadout.adapters.terminal.iterm2 import ITerm2Adapter
+from loadout.adapters.terminal.terminal_app import TerminalAppAdapter
+from loadout.adapters.terminal.warp import WarpAdapter
+from loadout.adapters.terminal.kitty import KittyAdapter
+from loadout.adapters.terminal.registry import TerminalAdapterRegistry
 
 
 # ---------------------------------------------------------------------------

@@ -8,11 +8,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ctx.adapters.ide.base import IDEAdapter, ProjectSet
-from ctx.adapters.ide.vscode import VSCodeAdapter, _get_projects_from_storage as _get_vscode_projects
-from ctx.adapters.ide.cursor import CursorAdapter, _get_projects_from_storage as _get_cursor_projects
-from ctx.adapters.ide.zed import ZedAdapter
-from ctx.adapters.ide.registry import IDEAdapterRegistry
+from loadout.adapters.ide.base import IDEAdapter, ProjectSet
+from loadout.adapters.ide.vscode import VSCodeAdapter, _get_projects_from_storage as _get_vscode_projects
+from loadout.adapters.ide.cursor import CursorAdapter, _get_projects_from_storage as _get_cursor_projects
+from loadout.adapters.ide.zed import ZedAdapter
+from loadout.adapters.ide.registry import IDEAdapterRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -133,15 +133,15 @@ class TestVSCodeAdapter:
         storage.write_text(_make_windows_state_storage_json([str(project_dir)]))
 
         # Mock AppleScript to return nothing, so it falls back to storage
-        with patch("ctx.adapters.ide.vscode._get_projects_from_applescript", return_value=[]):
-            with patch("ctx.adapters.ide.vscode._STORAGE_CANDIDATES", [storage]):
+        with patch("loadout.adapters.ide.vscode._get_projects_from_applescript", return_value=[]):
+            with patch("loadout.adapters.ide.vscode._STORAGE_CANDIDATES", [storage]):
                 result = self.adapter.get_open_projects()
         assert str(project_dir) in result
 
     def test_get_open_projects_returns_empty_when_no_storage(self, tmp_path):
         missing = tmp_path / "missing.json"
-        with patch("ctx.adapters.ide.vscode._get_projects_from_applescript", return_value=[]):
-            with patch("ctx.adapters.ide.vscode._STORAGE_CANDIDATES", [missing]):
+        with patch("loadout.adapters.ide.vscode._get_projects_from_applescript", return_value=[]):
+            with patch("loadout.adapters.ide.vscode._STORAGE_CANDIDATES", [missing]):
                 assert self.adapter.get_open_projects() == []
 
     def test_get_open_projects_prefers_applescript(self, tmp_path):
@@ -149,7 +149,7 @@ class TestVSCodeAdapter:
         project_dir = tmp_path / "myproject"
         project_dir.mkdir()
         
-        with patch("ctx.adapters.ide.vscode._get_projects_from_applescript", return_value=[str(project_dir)]):
+        with patch("loadout.adapters.ide.vscode._get_projects_from_applescript", return_value=[str(project_dir)]):
             result = self.adapter.get_open_projects()
         assert str(project_dir) in result
 
@@ -191,15 +191,15 @@ class TestCursorAdapter:
         storage = tmp_path / "storage.json"
         storage.write_text(_make_windows_state_storage_json([str(project_dir)]))
 
-        with patch("ctx.adapters.ide.cursor._get_projects_from_applescript", return_value=[]):
-            with patch("ctx.adapters.ide.cursor._STORAGE_PATH", storage):
+        with patch("loadout.adapters.ide.cursor._get_projects_from_applescript", return_value=[]):
+            with patch("loadout.adapters.ide.cursor._STORAGE_PATH", storage):
                 result = self.adapter.get_open_projects()
         assert str(project_dir) in result
 
     def test_get_open_projects_returns_empty_when_no_storage(self, tmp_path):
         missing = tmp_path / "missing.json"
-        with patch("ctx.adapters.ide.cursor._get_projects_from_applescript", return_value=[]):
-            with patch("ctx.adapters.ide.cursor._STORAGE_PATH", missing):
+        with patch("loadout.adapters.ide.cursor._get_projects_from_applescript", return_value=[]):
+            with patch("loadout.adapters.ide.cursor._STORAGE_PATH", missing):
                 assert self.adapter.get_open_projects() == []
 
     def test_open_project_success(self):
@@ -239,7 +239,7 @@ class TestZedAdapter:
         recent = tmp_path / "recent_projects.json"
         recent.write_text(json.dumps([{"paths": [str(project_dir)]}]))
 
-        with patch("ctx.adapters.ide.zed._RECENT_PROJECTS_PATH", recent):
+        with patch("loadout.adapters.ide.zed._RECENT_PROJECTS_PATH", recent):
             result = self.adapter.get_open_projects()
         assert str(project_dir) in result
 
@@ -247,19 +247,19 @@ class TestZedAdapter:
         recent = tmp_path / "recent_projects.json"
         recent.write_text(json.dumps([{"paths": ["/does/not/exist"]}]))
 
-        with patch("ctx.adapters.ide.zed._RECENT_PROJECTS_PATH", recent):
+        with patch("loadout.adapters.ide.zed._RECENT_PROJECTS_PATH", recent):
             result = self.adapter.get_open_projects()
         assert result == []
 
     def test_get_open_projects_returns_empty_when_no_file(self, tmp_path):
         missing = tmp_path / "missing.json"
-        with patch("ctx.adapters.ide.zed._RECENT_PROJECTS_PATH", missing):
+        with patch("loadout.adapters.ide.zed._RECENT_PROJECTS_PATH", missing):
             assert self.adapter.get_open_projects() == []
 
     def test_get_open_projects_returns_empty_on_invalid_json(self, tmp_path):
         recent = tmp_path / "recent_projects.json"
         recent.write_text("bad json")
-        with patch("ctx.adapters.ide.zed._RECENT_PROJECTS_PATH", recent):
+        with patch("loadout.adapters.ide.zed._RECENT_PROJECTS_PATH", recent):
             assert self.adapter.get_open_projects() == []
 
     def test_open_project_success(self):

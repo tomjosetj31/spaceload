@@ -7,9 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ctx.daemon.server import TerminalPoller
-from ctx.replayer.replayer import Replayer
-from ctx.adapters.terminal.base import TerminalSession
+from loadout.daemon.server import TerminalPoller
+from loadout.replayer.replayer import Replayer
+from loadout.adapters.terminal.base import TerminalSession
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ class TestTerminalPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.available_adapters.side_effect = fake_available_adapters
 
-        with patch("ctx.daemon.server.TerminalAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.TerminalAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.3)
             poller.stop()
@@ -72,7 +72,7 @@ class TestTerminalPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.available_adapters.return_value = [adapter]
 
-        with patch("ctx.daemon.server.TerminalAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.TerminalAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.08)
             poller.stop()
@@ -92,7 +92,7 @@ class TestTerminalPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.available_adapters.return_value = [adapter]
 
-        with patch("ctx.daemon.server.TerminalAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.TerminalAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.3)
             poller.stop()
@@ -122,7 +122,7 @@ class TestTerminalPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.available_adapters.side_effect = fake_available_adapters
 
-        with patch("ctx.daemon.server.TerminalAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.TerminalAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.3)
             poller.stop()
@@ -140,7 +140,7 @@ class TestTerminalPollerIntegration:
         actions: list[dict] = []
         poller = TerminalPoller(actions, poll_interval=0.05)
 
-        with patch("ctx.daemon.server.TerminalAdapterRegistry", side_effect=RuntimeError("init error")):
+        with patch("loadout.daemon.server.TerminalAdapterRegistry", side_effect=RuntimeError("init error")):
             poller.start()
             time.sleep(0.2)
             poller.stop()
@@ -171,7 +171,7 @@ class TestTerminalPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.available_adapters.side_effect = fake_available_adapters
 
-        with patch("ctx.daemon.server.TerminalAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.TerminalAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.3)
             poller.stop()
@@ -208,7 +208,7 @@ class TestTerminalPollerIntegration:
         mock_registry = MagicMock()
         mock_registry.available_adapters.side_effect = fake_available_adapters
 
-        with patch("ctx.daemon.server.TerminalAdapterRegistry", return_value=mock_registry):
+        with patch("loadout.daemon.server.TerminalAdapterRegistry", return_value=mock_registry):
             poller.start()
             time.sleep(0.3)
             poller.stop()

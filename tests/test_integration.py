@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from ctx.store.workspace_store import WorkspaceStore
+from loadout.store.workspace_store import WorkspaceStore
 
 _SOCKET_WAIT_TIMEOUT = 15.0  # seconds to wait for daemon socket to appear
 
@@ -76,15 +76,15 @@ def _build_daemon_cmd(
 import sys
 sys.path.insert(0, {str(project_root)!r})
 
-import ctx.daemon.server as _m
+import loadout.daemon.server as _m
 from pathlib import Path
 
 # Override module-level path constants before starting
-_m._CTX_DIR = Path({str(sock_path.parent)!r})
+_m._LOADOUT_DIR = Path({str(sock_path.parent)!r})
 _m._SOCKET_PATH = Path({str(sock_path)!r})
 _m._PID_PATH = Path({str(pid_path)!r})
 
-from ctx.daemon.server import RecorderDaemon
+from loadout.daemon.server import RecorderDaemon
 d = RecorderDaemon({workspace_name!r}, Path({str(db_path)!r}))
 d.start()
 """,
@@ -102,7 +102,7 @@ def ctx_env(tmp_path: Path):
     short_dir = _make_short_tmpdir()
     sock_path = short_dir / "d.sock"
     pid_path = short_dir / "d.pid"
-    db_path = tmp_path / "ctx.db"
+    db_path = tmp_path / "loadout.db"
     project_root = Path(__file__).resolve().parents[1]
     try:
         yield {

@@ -12,8 +12,8 @@ import yaml
 
 from click.testing import CliRunner
 
-from ctx.cli.main import cli
-from ctx.store.workspace_store import WorkspaceStore
+from loadout.cli.main import cli
+from loadout.store.workspace_store import WorkspaceStore
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ def patched_store(tmp_path):
         return WorkspaceStore(db_path)
 
     runner = CliRunner()
-    with patch("ctx.cli.main._get_store", side_effect=_make_store):
+    with patch("loadout.cli.main._get_store", side_effect=_make_store):
         yield runner, db_path
 
 
@@ -74,7 +74,7 @@ class TestRunCommand:
         ])
         store.close()
 
-        with patch("ctx.replayer.replayer.Replayer.replay") as mock_replay:
+        with patch("loadout.replayer.replayer.Replayer.replay") as mock_replay:
             result = runner.invoke(cli, ["run", "myworkspace"])
 
         assert result.exit_code == 0
