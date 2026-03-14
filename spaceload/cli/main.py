@@ -233,13 +233,60 @@ def list_workspaces() -> None:
 
 
 # ---------------------------------------------------------------------------
+# spaceload share <name>
+# ---------------------------------------------------------------------------
+
+@cli.command("share")
+@click.argument("name")
+@click.option("--output", "-o", type=click.Path(), default=None, help="Write to a specific file path.")
+@click.option("--clipboard", is_flag=True, help="Copy YAML to clipboard (macOS pbcopy).")
+@click.option("--description", "-d", default=None, help="Human-readable description to embed in the file.")
+@click.option("--print", "print_stdout", is_flag=True, help="Print YAML to stdout instead of writing a file.")
+def share(name: str, output: str | None, clipboard: bool, description: str | None, print_stdout: bool) -> None:
+    """Export workspace NAME as a portable .spaceload.yaml file for sharing."""
+    store = _get_store()
+    try:
+        ws = store.get_workspace(name)
+        if ws is None:
+            click.echo(f"Workspace '{name}' not found.", err=True)
+            sys.exit(1)
+        actions = store.get_actions(ws["id"])
+    finally:
+        store.close()
+
+    from spaceload.share.exporter import generate_share_yaml
+    yaml_content = generate_share_yaml(name, actions, description=description)
+
+    if print_stdout:
+        click.echo(yaml_content, nl=False)
+        return
+
+    if clipboard:
+        try:
+            subprocess.run(["pbcopy"], input=yaml_content.encode(), check=True)
+            click.echo(f"Workspace '{name}' copied to clipboard.")
+        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+            click.echo(f"Clipboard copy failed: {exc}", err=True)
+            sys.exit(1)
+        return
+
+    out_path = Path(output) if output else Path(f"{name}.spaceload.yaml")
+    out_path.write_text(yaml_content)
+    click.echo(f"Shared: {out_path}")
+    click.echo(f"Anyone can import it with: spaceload import {out_path}")
+
+
+# ---------------------------------------------------------------------------
 # spaceload import [file]
 # ---------------------------------------------------------------------------
 
 @cli.command("import")
 @click.argument("file", type=click.Path(exists=True), required=False)
 def import_workspace(file: str | None) -> None:
-    """Import a workspace from a YAML FILE (or stdin if omitted)."""
+    """Import a workspace from a YAML FILE (or stdin if omitted).
+
+    Supports both the native export format and portable .spaceload.yaml share files.
+    """
     if file:
         yaml_str = Path(file).read_text()
     else:
@@ -247,12 +294,67 @@ def import_workspace(file: str | None) -> None:
             click.echo("Provide a FILE argument or pipe YAML via stdin.", err=True)
             sys.exit(1)
         yaml_str = sys.stdin.read()
+
+    import yaml as _yaml
+    doc = _yaml.safe_load(yaml_str)
+
+    if isinstance(doc, dict) and "spaceload" in doc:
+        _import_share_file(yaml_str, doc)
+    else:
+        store = _get_store()
+        try:
+            store.import_yaml(yaml_str)
+        finally:
+            store.close()
+        click.echo("Workspace imported successfully.")
+
+
+def _import_share_file(raw_yaml: str, doc: dict) -> None:
+    """Handle import of a .spaceload.yaml share file."""
+    import yaml as _yaml
+    from spaceload.share.token_resolver import detect_tokens, auto_tokens, resolve_tokens
+    from spaceload.share.exporter import share_doc_to_store_yaml
+
+    tokens = detect_tokens(raw_yaml)
+    resolved = auto_tokens()
+
+    # Prompt the user for any token we cannot resolve automatically
+    for token in sorted(tokens - set(resolved)):
+        resolved[token] = click.prompt(
+            f"This workspace references {{{{{token}}}}}. Enter the local path"
+        )
+
+    resolved_yaml = resolve_tokens(raw_yaml, resolved)
+    resolved_doc = _yaml.safe_load(resolved_yaml)
+
+    store_yaml = share_doc_to_store_yaml(resolved_doc)
     store = _get_store()
     try:
-        store.import_yaml(yaml_str)
+        store.import_yaml(store_yaml)
     finally:
         store.close()
-    click.echo("Workspace imported successfully.")
+
+    _print_import_summary(resolved_doc)
+
+
+def _print_import_summary(doc: dict) -> None:
+    """Print a human-readable summary of what was imported."""
+    name = doc.get("workspace", {}).get("name", "?")
+    tabs = doc.get("browser", {}).get("tabs", [])
+    ide = doc.get("ide", {})
+    terminals = doc.get("terminals", [])
+    vpn = doc.get("vpn")
+
+    click.echo(f"\nImported workspace: {name}")
+    if tabs:
+        click.echo(f"  Browser tabs:  {len(tabs)}")
+    if ide:
+        click.echo(f"  IDE:           {ide.get('app', 'unknown')}")
+    if vpn:
+        click.echo(f"  VPN:           {vpn.get('vpn', 'unknown')}")
+    if terminals:
+        click.echo(f"  Terminals:     {len(terminals)}")
+    click.echo(f"\nRun it with: spaceload run {name}")
 
 
 # ---------------------------------------------------------------------------
