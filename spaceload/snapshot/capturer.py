@@ -9,6 +9,11 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from spaceload.adapters.browser.registry import BrowserAdapterRegistry
+from spaceload.adapters.ide.registry import IDEAdapterRegistry
+from spaceload.adapters.terminal.registry import TerminalAdapterRegistry
+from spaceload.adapters.vpn.registry import VPNAdapterRegistry
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,10 +24,6 @@ def capture_current() -> list[dict]:
     individual adapters are logged and skipped so a partial result is
     always returned.
     """
-    from spaceload.adapters.browser.registry import BrowserAdapterRegistry
-    from spaceload.adapters.ide.registry import IDEAdapterRegistry
-    from spaceload.adapters.terminal.registry import TerminalAdapterRegistry
-    from spaceload.adapters.vpn.registry import VPNAdapterRegistry
 
     actions: list[dict] = []
     now = datetime.now(timezone.utc).isoformat()
