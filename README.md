@@ -78,6 +78,20 @@ spaceload record my-project --include-open
 spaceload record my-project -i
 ```
 
+## Privacy & Permissions
+
+**Spaceload runs entirely on your machine. It never sends any data to a server, the internet, or any external service.** Everything is stored locally in `~/.spaceload/`.
+
+macOS will prompt you to grant the following permissions the first time they are needed:
+
+| Permission | Why it's needed |
+|------------|-----------------|
+| **Automation** | Used to control browsers (Chrome, Safari, Arc), IDEs (VS Code, Cursor), terminals (iTerm2, Terminal.app, Warp), and Tunnelblick via AppleScript to read open tabs, project paths, and connection state. macOS will show a dialog for each app the first time. |
+| **Accessibility** | Used via `System Events` to list running processes and read window titles (e.g. to detect which IDE projects are open). |
+| **Full Disk Access** | Required to read Firefox's session files (`~/Library/Application Support/Firefox/`) and VS Code/Cursor workspace state (`~/Library/Application Support/Code/` or `Cursor/`). Without this, those adapters fall back to window-title heuristics. |
+
+You can review and revoke these at any time in **System Settings → Privacy & Security**.
+
 ## Supported Integrations
 
 ### Specialized Adapters (Rich Tracking)
