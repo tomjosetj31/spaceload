@@ -379,6 +379,129 @@ def show(name: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# spaceload snapshot <name>
+# ---------------------------------------------------------------------------
+
+@cli.command("snapshot")
+@click.argument("name")
+@click.option("--overwrite", is_flag=True, default=False, help="Replace existing workspace with this name.")
+@click.option("--description", "-d", default="", help="Optional description stored as a tag in the workspace name.")
+def snapshot(name: str, overwrite: bool, description: str) -> None:
+    """Instantly capture the current environment as workspace NAME.
+
+    Unlike 'record'/'stop', this is a synchronous one-shot capture —
+    no daemon required. It reads all open browser tabs, IDE projects,
+    terminal sessions, and VPN connections right now.
+    """
+    from spaceload.snapshot.capturer import capture_current
+
+    store = _get_store()
+    try:
+        existing = store.get_workspace(name)
+        if existing is not None:
+            if not overwrite:
+                click.echo(
+                    f"Workspace '{name}' already exists. Use --overwrite to replace it.",
+                    err=True,
+                )
+                sys.exit(1)
+            store.delete_workspace(name)
+
+        click.echo(f"Capturing current environment…")
+        actions = capture_current()
+
+        workspace_id = store.create_workspace(name)
+        store.save_actions(workspace_id, actions)
+    finally:
+        store.close()
+
+    # Summary output
+    browsers: dict[str, int] = {}
+    ide_clients: list[str] = []
+    terminal_count = 0
+    vpn_label: str | None = None
+
+    for a in actions:
+        t = a.get("type")
+        if t == "browser_tab_open":
+            b = a.get("browser", "browser")
+            browsers[b] = browsers.get(b, 0) + 1
+        elif t == "ide_project_open":
+            entry = f"{a.get('client', 'IDE')} \u2192 {a.get('path', '')}"
+            ide_clients.append(entry)
+        elif t == "terminal_session_open":
+            terminal_count += 1
+        elif t == "vpn_connect":
+            client = a.get("client", "vpn")
+            profile = a.get("profile")
+            vpn_label = f"{client} ({profile})" if profile else client
+
+    click.echo(f"\nSnapshot saved: {name}")
+    for browser, count in sorted(browsers.items()):
+        click.echo(f"  Browser tabs:  {count} ({browser})")
+    for entry in ide_clients:
+        click.echo(f"  IDE:           {entry}")
+    if terminal_count:
+        click.echo(f"  Terminals:     {terminal_count} session(s)")
+    if vpn_label:
+        click.echo(f"  VPN:           {vpn_label}")
+    if not actions:
+        click.echo("  (nothing captured — are your apps open?)")
+
+
+# ---------------------------------------------------------------------------
+# spaceload diff <name-a> [name-b]
+# ---------------------------------------------------------------------------
+
+@cli.command("diff")
+@click.argument("name_a")
+@click.argument("name_b", required=False, default=None)
+@click.option(
+    "--current",
+    is_flag=True,
+    default=False,
+    help="Compare NAME_A against the current environment (default when only one name given).",
+)
+def diff_cmd(name_a: str, name_b: str | None, current: bool) -> None:
+    """Show a visual diff between workspaces or against the current environment.
+
+    \b
+    spaceload diff my-project            # saved workspace vs current environment
+    spaceload diff workspace-a workspace-b  # two saved workspaces
+    """
+    from spaceload.diff.differ import diff
+    from spaceload.diff.formatter import format_diff
+
+    compare_to_current = name_b is None or current
+
+    store = _get_store()
+    try:
+        ws_a = store.get_workspace(name_a)
+        if ws_a is None:
+            click.echo(f"Workspace '{name_a}' not found.", err=True)
+            sys.exit(1)
+        old_actions = store.get_actions(ws_a["id"])
+
+        if compare_to_current:
+            from spaceload.snapshot.capturer import capture_current
+            click.echo("Capturing current environment…", err=True)
+            new_actions = capture_current()
+            new_label = "current"
+        else:
+            ws_b = store.get_workspace(name_b)
+            if ws_b is None:
+                click.echo(f"Workspace '{name_b}' not found.", err=True)
+                sys.exit(1)
+            new_actions = store.get_actions(ws_b["id"])
+            new_label = name_b
+    finally:
+        store.close()
+
+    result = diff(old_actions, new_actions)
+    format_diff(result, old_name=name_a, new_name=new_label)
+
+
+# ---------------------------------------------------------------------------
 # spaceload shell-hook <shell>
 # ---------------------------------------------------------------------------
 
