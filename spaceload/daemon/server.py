@@ -1070,6 +1070,20 @@ class RecorderDaemon:
             }
             conn.sendall((json.dumps(response) + "\n").encode())
 
+        elif command == "events":
+            # Return all actions since the given offset index.
+            # Reading a slice of a list is safe under the GIL even though
+            # poller threads may concurrently append to self._actions.
+            since = int(msg.get("since", 0))
+            snapshot = self._actions[since:]
+            total = len(self._actions)
+            response = {
+                "status": "ok",
+                "events": snapshot,
+                "total": total,
+            }
+            conn.sendall((json.dumps(response) + "\n").encode())
+
         elif command == "record_action":
             action = msg.get("action", {})
             self._actions.append(action)

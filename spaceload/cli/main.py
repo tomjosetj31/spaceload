@@ -74,9 +74,19 @@ def cli() -> None:
     default=False,
     help="Also capture apps/tabs/projects already open when recording starts.",
 )
-def record(name: str, include_open: bool) -> None:
+@click.option(
+    "--no-tui",
+    is_flag=True,
+    default=False,
+    help="Disable the live TUI panel; print plain text instead (for CI/scripting).",
+)
+def record(name: str, include_open: bool, no_tui: bool) -> None:
     """Start recording a workspace session named NAME.
-    
+
+    By default, shows a live TUI panel with captured events in real time.
+    Use --no-tui to fall back to plain text output (useful in CI environments
+    or when stdout is not a terminal).
+
     By default, only captures new things opened during recording.
     Use --include-open to also capture everything already open.
     """
@@ -98,7 +108,7 @@ def record(name: str, include_open: bool) -> None:
         "--db",
         str(_DEFAULT_DB),
     ]
-    
+
     if include_open:
         daemon_cmd.append("--include-open")
 
@@ -109,7 +119,7 @@ def record(name: str, include_open: bool) -> None:
         start_new_session=True,  # detach from parent's process group
     )
 
-    # Give the daemon a moment to create the socket
+    # Wait for the daemon to create its socket (up to 2 s)
     import time
     for _ in range(20):
         if _SOCKET_PATH.exists():
@@ -122,11 +132,59 @@ def record(name: str, include_open: bool) -> None:
         )
         sys.exit(1)
 
-    msg = f"Recording started for '{name}'."
-    if include_open:
-        msg += " (including already open apps)"
-    msg += " Run 'spaceload stop' when done."
-    click.echo(msg)
+    # Decide whether to show the live TUI panel
+    use_tui = not no_tui and sys.stdout.isatty()
+
+    if use_tui:
+        _run_tui(name)
+    else:
+        # Plain-text fallback (original behaviour)
+        msg = f"Recording started for '{name}'."
+        if include_open:
+            msg += " (including already open apps)"
+        msg += " Run 'spaceload stop' when done."
+        click.echo(msg)
+
+
+def _run_tui(name: str) -> None:
+    """Run the foreground TUI loop, blocking until the user stops recording."""
+    import time
+
+    from spaceload.tui.event_poller import EventPoller
+    from spaceload.tui.recording_view import RecordingView
+    from spaceload.tui.renderer import Renderer
+    from spaceload.tui.summary_view import show_summary
+
+    poller = EventPoller(_SOCKET_PATH)
+    view = RecordingView(name)
+    renderer = Renderer()
+
+    try:
+        while True:
+            # Exit cleanly if the daemon was stopped externally
+            if not _daemon_is_running():
+                break
+            events = poller.poll()
+            view.update_events(events)
+            renderer.render(view)
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        pass
+
+    # Clear the live panel before printing the summary
+    renderer.clear()
+
+    # Stop the daemon if it is still running (Ctrl+C path)
+    action_count = view.total_events
+    if _daemon_is_running():
+        try:
+            response = _send_to_daemon({"command": "stop"})
+            if response.get("status") == "ok":
+                action_count = response.get("action_count", action_count)
+        except (ConnectionRefusedError, FileNotFoundError, OSError):
+            pass
+
+    show_summary(name, view, action_count)
 
 
 # ---------------------------------------------------------------------------
