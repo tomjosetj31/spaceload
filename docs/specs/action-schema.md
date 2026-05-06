@@ -154,8 +154,9 @@ Emitted by `TerminalPoller` when an existing session changes its working directo
 
 Emitted by the **shell hook** (not the TerminalPoller) when a command is typed
 in a shell with the hook installed. The hook sends this via the Unix socket.
-Not emitted automatically — requires `eval "$(spaceload shell-hook zsh)"` in
-`~/.zshrc`.
+Not emitted automatically — requires the shell hook to be installed:
+`eval "$(spaceload shell-hook zsh)"` in `~/.zshrc` (zsh) or
+`eval "$(spaceload shell-hook bash)"` in `~/.bashrc` (bash).
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -189,7 +190,7 @@ by a more specific poller (i.e. not a browser, IDE, or terminal).
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `app_name` | string | yes | macOS application name as reported by the system (e.g. `"Slack"`, `"Spotify"`). |
-| `workspace` | string | no | AeroSpace workspace label. Present only when AeroSpace/yabai is running. |
+| `workspace` | string | no | AeroSpace workspace label. Present only when AeroSpace or yabai is running. |
 
 **Example:**
 ```json
