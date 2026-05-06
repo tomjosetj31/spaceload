@@ -45,7 +45,8 @@ spaceload run <name>
 | `spaceload/adapters/vpn/` | Per-VPN-client adapters (Tailscale, WireGuard, Cisco, Mullvad, OpenVPN, Tunnelblick). Detect connection state; connect/disconnect during replay. |
 | `spaceload/adapters/ide/` | Per-IDE adapters (VS Code, Cursor, Zed). Read open projects; open project paths during replay. |
 | `spaceload/adapters/terminal/` | Per-terminal adapters (iTerm2, Terminal.app, Warp, Kitty). Read open sessions; open directories during replay. |
-| `spaceload/adapters/wm/` | Window manager adapters (AeroSpace, yabai). Read which app is in which workspace; move windows during replay. |
+| `spaceload/adapters/wm/` | Abstract base class and registry for window manager adapters (AeroSpace, yabai). Read which app is in which workspace; move windows during replay. |
+| `spaceload/adapters/aerospace/` | AeroSpace-specific adapter used directly by the daemon and replayer for workspace queries when AeroSpace is the active window manager. |
 | `spaceload/snapshot/` | Synchronous point-in-time capture of the full environment. Used by `spaceload snapshot` (no daemon). |
 | `spaceload/store/` | SQLite persistence. Stores workspaces and their action lists. Exports/imports YAML. |
 | `spaceload/replayer/` | Walks the action list and drives macOS to reopen each recorded item. |
