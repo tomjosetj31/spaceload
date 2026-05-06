@@ -281,6 +281,9 @@ class BrowserPoller:
         self._domain_cooldown: float = domain_cooldown if domain_cooldown is not None else 5.0
         # Whether to record already-open tabs on start
         self._include_open = include_open
+        # Set to True after the first complete poll cycle so we can distinguish
+        # "browser was already running at baseline" from "browser just started"
+        self._first_poll_done = False
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -390,32 +393,61 @@ class BrowserPoller:
             logger.debug("BrowserPoller: %s has %d tabs", adapter.name, len(current_urls))
             
             if adapter.name not in self._known_tabs:
-                # First time seeing this browser — set baseline
-                self._known_tabs[adapter.name] = current_urls
-                self._pending_urls[adapter.name] = {}
-                
-                if self._include_open:
-                    # Record all currently open tabs (skip ignored URLs)
-                    logger.debug("BrowserPoller: %s baseline with %d tabs - recording all", adapter.name, len(current_urls))
+                if self._first_poll_done:
+                    # Browser started after recording began — emit app_open + all current tabs
+                    app_name = BROWSER_APP_NAMES.get(adapter.name)
+                    if app_name:
+                        action: dict = {
+                            "type": "app_open",
+                            "app_name": app_name,
+                            "timestamp": _now_iso(),
+                        }
+                        if aerospace is not None:
+                            ws = aerospace.get_app_workspace(app_name)
+                            if ws:
+                                action["workspace"] = ws
+                        self._actions.append(action)
+                        logger.info("BrowserPoller: RECORDED app_open browser=%s app=%s", adapter.name, app_name)
                     for url in sorted(current_urls):
                         if self._should_ignore_url(url):
                             continue
-                        action: dict = {
+                        tab_action: dict = {
                             "type": "browser_tab_open",
                             "browser": adapter.name,
                             "url": url,
                             "timestamp": _now_iso(),
                         }
-                        if aerospace is not None:
-                            app_name = BROWSER_APP_NAMES.get(adapter.name)
-                            if app_name:
-                                ws = aerospace.get_app_workspace(app_name)
-                                if ws:
-                                    action["workspace"] = ws
-                        self._actions.append(action)
-                        logger.info("BrowserPoller: RECORDED browser_tab_open (baseline) browser=%s url=%s", adapter.name, url)
+                        if aerospace is not None and app_name:
+                            ws = aerospace.get_app_workspace(app_name)
+                            if ws:
+                                tab_action["workspace"] = ws
+                        self._actions.append(tab_action)
+                        logger.info("BrowserPoller: RECORDED browser_tab_open browser=%s url=%s", adapter.name, url)
                 else:
-                    logger.debug("BrowserPoller: %s baseline set with %d tabs", adapter.name, len(current_urls))
+                    # First poll cycle — treat as baseline, do not emit app_open
+                    if self._include_open:
+                        logger.debug("BrowserPoller: %s baseline with %d tabs - recording all", adapter.name, len(current_urls))
+                        for url in sorted(current_urls):
+                            if self._should_ignore_url(url):
+                                continue
+                            action = {
+                                "type": "browser_tab_open",
+                                "browser": adapter.name,
+                                "url": url,
+                                "timestamp": _now_iso(),
+                            }
+                            if aerospace is not None:
+                                app_name = BROWSER_APP_NAMES.get(adapter.name)
+                                if app_name:
+                                    ws = aerospace.get_app_workspace(app_name)
+                                    if ws:
+                                        action["workspace"] = ws
+                            self._actions.append(action)
+                            logger.info("BrowserPoller: RECORDED browser_tab_open (baseline) browser=%s url=%s", adapter.name, url)
+                    else:
+                        logger.debug("BrowserPoller: %s baseline set with %d tabs", adapter.name, len(current_urls))
+                self._known_tabs[adapter.name] = current_urls
+                self._pending_urls[adapter.name] = {}
                 continue
             
             # Find new URLs
@@ -480,6 +512,7 @@ class BrowserPoller:
             
             # Update known tabs
             self._known_tabs[adapter.name] = current_urls
+        self._first_poll_done = True
 
 
 class IDEPoller:
@@ -651,6 +684,9 @@ class TerminalPoller:
         self._known_dirs: dict[str, set[str]] = {}
         # Whether to record already-open terminals on start
         self._include_open = include_open
+        # Set to True after the first complete poll cycle so we can distinguish
+        # "terminal was already running at baseline" from "terminal just started"
+        self._first_poll_done = False
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -700,6 +736,7 @@ class TerminalPoller:
             except AttributeError:
                 # Fall back to directory-based tracking for adapters without get_sessions
                 self._poll_dirs_legacy(adapter, aerospace)
+        self._first_poll_done = True
 
     def _poll_sessions(self, adapter_name: str, sessions: list, aerospace: object | None) -> None:
         """Poll using session-based tracking (tracks individual terminal tabs/windows)."""
@@ -710,33 +747,62 @@ class TerminalPoller:
                     adapter_name, len(current_sessions), current_sessions)
         
         if adapter_name not in self._known_sessions:
-            # First time seeing this adapter — set baseline
-            self._known_sessions[adapter_name] = current_sessions.copy()
-            
-            if self._include_open:
-                # Record all currently open sessions
-                logger.debug("TerminalPoller: %s baseline with %d sessions - recording all", 
-                            adapter_name, len(current_sessions))
-                for session_id, directory in current_sessions.items():
+            if self._first_poll_done:
+                # Terminal started after recording began — emit app_open + all current sessions
+                app_name = TERMINAL_APP_NAMES.get(adapter_name)
+                if app_name:
                     action: dict = {
+                        "type": "app_open",
+                        "app_name": app_name,
+                        "timestamp": _now_iso(),
+                    }
+                    if aerospace is not None:
+                        ws = aerospace.get_app_workspace(app_name)
+                        if ws:
+                            action["workspace"] = ws
+                    self._actions.append(action)
+                    logger.info("TerminalPoller: RECORDED app_open adapter=%s app=%s", adapter_name, app_name)
+                for session_id, directory in current_sessions.items():
+                    sess_action: dict = {
                         "type": "terminal_session_open",
                         "app": adapter_name,
                         "directory": directory,
                         "session_id": session_id,
                         "timestamp": _now_iso(),
                     }
-                    if aerospace is not None:
-                        app_name = TERMINAL_APP_NAMES.get(adapter_name)
-                        if app_name:
-                            ws = aerospace.get_app_workspace(app_name)
-                            if ws:
-                                action["workspace"] = ws
-                    self._actions.append(action)
-                    logger.info("TerminalPoller: RECORDED terminal_session_open (baseline) app=%s dir=%s session=%s", 
-                               adapter_name, directory, session_id)
+                    if aerospace is not None and app_name:
+                        ws = aerospace.get_app_workspace(app_name)
+                        if ws:
+                            sess_action["workspace"] = ws
+                    self._actions.append(sess_action)
+                    logger.info("TerminalPoller: RECORDED terminal_session_open adapter=%s dir=%s session=%s",
+                                adapter_name, directory, session_id)
             else:
-                logger.debug("TerminalPoller: %s baseline set with %d sessions", 
-                            adapter_name, len(current_sessions))
+                # First poll cycle — treat as baseline, do not emit app_open
+                if self._include_open:
+                    logger.debug("TerminalPoller: %s baseline with %d sessions - recording all",
+                                adapter_name, len(current_sessions))
+                    for session_id, directory in current_sessions.items():
+                        action = {
+                            "type": "terminal_session_open",
+                            "app": adapter_name,
+                            "directory": directory,
+                            "session_id": session_id,
+                            "timestamp": _now_iso(),
+                        }
+                        if aerospace is not None:
+                            app_name = TERMINAL_APP_NAMES.get(adapter_name)
+                            if app_name:
+                                ws = aerospace.get_app_workspace(app_name)
+                                if ws:
+                                    action["workspace"] = ws
+                        self._actions.append(action)
+                        logger.info("TerminalPoller: RECORDED terminal_session_open (baseline) app=%s dir=%s session=%s",
+                                   adapter_name, directory, session_id)
+                else:
+                    logger.debug("TerminalPoller: %s baseline set with %d sessions",
+                                adapter_name, len(current_sessions))
+            self._known_sessions[adapter_name] = current_sessions.copy()
             return
         
         known = self._known_sessions[adapter_name]
@@ -784,9 +850,24 @@ class TerminalPoller:
         logger.debug("TerminalPoller: %s has %d dirs: %s", adapter.name, len(current_dirs), current_dirs)
         
         if adapter.name not in self._known_dirs:
-            # First time seeing this adapter — record baseline, no events
+            if self._first_poll_done:
+                # Terminal started after recording began — emit app_open
+                app_name = TERMINAL_APP_NAMES.get(adapter.name)
+                if app_name:
+                    action: dict = {
+                        "type": "app_open",
+                        "app_name": app_name,
+                        "timestamp": _now_iso(),
+                    }
+                    if aerospace is not None:
+                        ws = aerospace.get_app_workspace(app_name)
+                        if ws:
+                            action["workspace"] = ws
+                    self._actions.append(action)
+                    logger.info("TerminalPoller: RECORDED app_open (legacy) adapter=%s app=%s", adapter.name, app_name)
+            else:
+                logger.debug("TerminalPoller: %s baseline set with %d dirs", adapter.name, len(current_dirs))
             self._known_dirs[adapter.name] = current_dirs
-            logger.debug("TerminalPoller: %s baseline set with %d dirs", adapter.name, len(current_dirs))
             return
         
         new_dirs = current_dirs - self._known_dirs[adapter.name]
