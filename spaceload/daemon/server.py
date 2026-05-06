@@ -14,6 +14,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -503,6 +504,9 @@ class IDEPoller:
         self._known_projects: dict[str, set[str]] = {}
         # Whether to record already-open projects on start
         self._include_open = include_open
+        # Set to True after the first complete poll cycle so we can distinguish
+        # "IDE was already running at baseline" from "IDE just started"
+        self._first_poll_done = False
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -548,33 +552,60 @@ class IDEPoller:
             current_paths = set(adapter.get_open_projects())
             logger.debug("IDEPoller: %s has %d projects", adapter.name, len(current_paths))
             if adapter.name not in self._known_projects:
-                # First time seeing this IDE — set baseline
-                self._known_projects[adapter.name] = current_paths
-                
-                if self._include_open:
-                    # Record all currently open projects
-                    logger.debug("IDEPoller: %s baseline with %d projects - recording all", adapter.name, len(current_paths))
-                    for path in sorted(current_paths):
+                if self._first_poll_done:
+                    # IDE started after recording began — emit app_open then any projects
+                    app_name = IDE_APP_NAMES.get(adapter.name)
+                    if app_name:
                         action: dict = {
+                            "type": "app_open",
+                            "app_name": app_name,
+                            "timestamp": _now_iso(),
+                        }
+                        if aerospace is not None:
+                            ws = aerospace.get_app_workspace(app_name)
+                            if ws:
+                                action["workspace"] = ws
+                        self._actions.append(action)
+                        logger.info("IDEPoller: RECORDED app_open client=%s app=%s", adapter.name, app_name)
+                    for path in sorted(current_paths):
+                        proj_action: dict = {
                             "type": "ide_project_open",
                             "client": adapter.name,
                             "path": path,
                             "timestamp": _now_iso(),
                         }
-                        if aerospace is not None:
-                            app_name = IDE_APP_NAMES.get(adapter.name)
-                            if app_name:
-                                ws = aerospace.get_app_workspace(app_name)
-                                if ws:
-                                    action["workspace"] = ws
-                        self._actions.append(action)
-                        logger.info("IDEPoller: RECORDED ide_project_open (baseline) client=%s path=%s", adapter.name, path)
+                        if aerospace is not None and app_name:
+                            ws = aerospace.get_app_workspace(app_name)
+                            if ws:
+                                proj_action["workspace"] = ws
+                        self._actions.append(proj_action)
+                        logger.info("IDEPoller: RECORDED ide_project_open client=%s path=%s", adapter.name, path)
                 else:
-                    logger.debug("IDEPoller: %s baseline set with %d projects", adapter.name, len(current_paths))
+                    # First poll cycle — treat as baseline, do not emit app_open
+                    if self._include_open:
+                        logger.debug("IDEPoller: %s baseline with %d projects - recording all", adapter.name, len(current_paths))
+                        for path in sorted(current_paths):
+                            action = {
+                                "type": "ide_project_open",
+                                "client": adapter.name,
+                                "path": path,
+                                "timestamp": _now_iso(),
+                            }
+                            if aerospace is not None:
+                                app_name = IDE_APP_NAMES.get(adapter.name)
+                                if app_name:
+                                    ws = aerospace.get_app_workspace(app_name)
+                                    if ws:
+                                        action["workspace"] = ws
+                            self._actions.append(action)
+                            logger.info("IDEPoller: RECORDED ide_project_open (baseline) client=%s path=%s", adapter.name, path)
+                    else:
+                        logger.debug("IDEPoller: %s baseline set with %d projects", adapter.name, len(current_paths))
+                self._known_projects[adapter.name] = current_paths
                 continue
             new_paths = current_paths - self._known_projects[adapter.name]
             for path in sorted(new_paths):
-                action: dict = {
+                action = {
                     "type": "ide_project_open",
                     "client": adapter.name,
                     "path": path,
@@ -589,6 +620,7 @@ class IDEPoller:
                 self._actions.append(action)
                 logger.info("IDEPoller: RECORDED ide_project_open client=%s path=%s", adapter.name, path)
             self._known_projects[adapter.name] = current_paths
+        self._first_poll_done = True
 
 
 class TerminalPoller:
@@ -778,10 +810,30 @@ class TerminalPoller:
 
 
 def _get_running_foreground_apps() -> set[str]:
-    """Return names of all visible (foreground) apps via AppleScript.
+    """Return names of all visible (foreground) apps.
 
-    Used as a fallback when no tiling WM is available.
+    Uses lsappinfo (no Automation/Accessibility permissions required) with an
+    AppleScript fallback for older macOS versions where lsappinfo is absent.
     """
+    # Primary: lsappinfo — lists all GUI apps without requiring special permissions
+    try:
+        result = subprocess.run(
+            ["/usr/bin/lsappinfo", "list"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            names: set[str] = set()
+            for line in result.stdout.splitlines():
+                m = re.match(r'\s*name\s*=\s*"([^"]+)"', line)
+                if m:
+                    names.add(m.group(1))
+            if names:
+                return names
+    except (subprocess.SubprocessError, OSError):
+        pass
+    # Fallback: System Events AppleScript (requires Automation permission)
     try:
         result = subprocess.run(
             [
@@ -793,11 +845,11 @@ def _get_running_foreground_apps() -> set[str]:
             text=True,
             timeout=5,
         )
-        if result.returncode != 0 or not result.stdout.strip():
-            return set()
-        return {name.strip() for name in result.stdout.split(",")}
+        if result.returncode == 0 and result.stdout.strip():
+            return {name.strip() for name in result.stdout.split(",")}
     except (subprocess.SubprocessError, OSError):
-        return set()
+        pass
+    return set()
 
 
 class WindowSnapshotPoller:
