@@ -104,13 +104,13 @@ class TestWindowSnapshotPoller:
         mock_wm.list_windows.return_value = [
             _make_window(1, "Slack", "2"),
             _make_window(2, "Microsoft Teams", "1"),
-            _make_window(3, "Firefox", "Q"),
+            _make_window(3, "Zoom", "Q"),
         ]
         poller._poll_wm()
 
         assert len(actions) == 3
         app_names = {a["app_name"] for a in actions}
-        assert app_names == {"Slack", "Microsoft Teams", "Firefox"}
+        assert app_names == {"Slack", "Microsoft Teams", "Zoom"}
 
     def test_second_poll_does_not_re_record(self):
         poller, actions = self._make_poller()

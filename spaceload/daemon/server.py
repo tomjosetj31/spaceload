@@ -394,20 +394,10 @@ class BrowserPoller:
             
             if adapter.name not in self._known_tabs:
                 if self._first_poll_done:
-                    # Browser started after recording began — emit app_open + all current tabs
+                    # Browser started after recording began — emit tabs only.
+                    # Skipping app_open: the browser is opened implicitly when tabs are
+                    # replayed, so emitting app_open would create a spurious blank window.
                     app_name = BROWSER_APP_NAMES.get(adapter.name)
-                    if app_name:
-                        action: dict = {
-                            "type": "app_open",
-                            "app_name": app_name,
-                            "timestamp": _now_iso(),
-                        }
-                        if aerospace is not None:
-                            ws = aerospace.get_app_workspace(app_name)
-                            if ws:
-                                action["workspace"] = ws
-                        self._actions.append(action)
-                        logger.info("BrowserPoller: RECORDED app_open browser=%s app=%s", adapter.name, app_name)
                     for url in sorted(current_urls):
                         if self._should_ignore_url(url):
                             continue
@@ -957,12 +947,47 @@ class WindowSnapshotPoller:
     # OS-level app names handled by specific pollers — skip them here
     _MANAGED_OS_NAMES: frozenset[str] = frozenset({
         # Browsers (BrowserPoller)
-        "Google Chrome", "Chromium", "Safari", "Arc",
+        "Google Chrome", "Chromium", "Safari", "Arc", "Firefox",
         # IDEs (IDEPoller)
         "Code", "Cursor", "Zed",
         # Terminals (TerminalPoller)
         "iTerm2", "Terminal", "Warp", "kitty",
     })
+
+    # macOS system UIElements that are not user-opened apps
+    _SYSTEM_PROCESS_NAMES: frozenset[str] = frozenset({
+        "System Events", "loginwindow", "WindowManager", "SystemUIServer",
+        "CoreServicesUIAgent", "Dock", "Control Center", "Notification Center",
+        "UserNotificationCenter", "Spotlight", "TextInputMenuAgent",
+        "TextInputSwitcher", "Siri", "Shortcuts", "Single Sign-On",
+        "AirPlay Screen Mirroring", "coreautha", "BackgroundTaskManagementAgent",
+        "PowerChime", "storeuid", "talagentd", "universalAccessAuthWarn", "nbagent",
+    })
+
+    # Suffixes that identify renderer / helper sub-processes spawned by apps.
+    # Pattern: "AppName Graphics and Media", "AppName Networking", etc.
+    _SUBPROCESS_SUFFIXES: tuple[str, ...] = (
+        " Graphics and Media",
+        " Networking",
+        " Web Content",
+        " WebView",
+    )
+
+    @classmethod
+    def _should_skip_app(cls, name: str) -> bool:
+        """Return True for apps that should not generate app_open events."""
+        if name in cls._MANAGED_OS_NAMES or name in cls._SYSTEM_PROCESS_NAMES:
+            return True
+        # Renderer sub-processes: "AppName Graphics and Media", "AppName Networking", …
+        if any(name.endswith(s) for s in cls._SUBPROCESS_SUFFIXES):
+            return True
+        # Parenthetical role processes: "Microsoft Teams (Notification Center)"
+        if re.search(r' \([^)]+\)$', name):
+            return True
+        # Helper processes: "Slack Helper (Plugin)", "App Helper"
+        if " Helper" in name:
+            return True
+        return False
 
     def __init__(
         self,
@@ -1005,7 +1030,7 @@ class WindowSnapshotPoller:
                 if self._include_open:
                     # Record all currently open apps
                     for w in initial:
-                        if w.app_name in self._MANAGED_OS_NAMES:
+                        if self._should_skip_app(w.app_name):
                             continue
                         action: dict = {
                             "type": "app_open",
@@ -1025,7 +1050,7 @@ class WindowSnapshotPoller:
             if self._include_open:
                 # Record all currently running apps
                 for app_name in sorted(self._seen_apps):
-                    if app_name in self._MANAGED_OS_NAMES:
+                    if self._should_skip_app(app_name):
                         continue
                     action: dict = {
                         "type": "app_open",
@@ -1055,8 +1080,8 @@ class WindowSnapshotPoller:
             if w.window_id in self._seen_ids:
                 continue
             self._seen_ids.add(w.window_id)
-            if w.app_name in self._MANAGED_OS_NAMES:
-                logger.debug("WindowSnapshotPoller: skipping managed app %r", w.app_name)
+            if self._should_skip_app(w.app_name):
+                logger.debug("WindowSnapshotPoller: skipping app %r", w.app_name)
                 continue
             action: dict = {
                 "type": "app_open",
@@ -1073,8 +1098,8 @@ class WindowSnapshotPoller:
         logger.debug("WindowSnapshotPoller: fallback mode found %d apps: %s", len(current), current)
         new_apps = current - self._seen_apps
         for app_name in sorted(new_apps):
-            if app_name in self._MANAGED_OS_NAMES:
-                logger.debug("WindowSnapshotPoller: skipping managed app %r", app_name)
+            if self._should_skip_app(app_name):
+                logger.debug("WindowSnapshotPoller: skipping app %r", app_name)
                 continue
             action: dict = {
                 "type": "app_open",
