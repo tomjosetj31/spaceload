@@ -15,6 +15,7 @@ IDE_APP_NAMES: dict[str, str] = {
     "vscode": "Code",
     "cursor": "Cursor",
     "zed": "Zed",
+    "pycharm": "PyCharm",
 }
 
 # Maps ctx terminal adapter name → app name as reported by the WM

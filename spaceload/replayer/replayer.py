@@ -45,6 +45,26 @@ def _setup_replay_logging() -> None:
 
 _SENTINEL = object()  # marks "not yet initialised" for the aerospace field
 
+
+def _tool_action_summary(action: dict) -> str:
+    """Return a short human-readable summary of a tool state action."""
+    t = action.get("type", "")
+    if t == "docker_containers":
+        containers = action.get("containers", [])
+        return f"{len(containers)} container(s): {', '.join(containers[:3])}" + (
+            " …" if len(containers) > 3 else ""
+        )
+    if t == "kubectl_context":
+        return f"context={action.get('context', '')!r}"
+    if t == "aws_profile":
+        region = action.get("region") or ""
+        return f"profile={action.get('profile', '')!r}" + (f" region={region!r}" if region else "")
+    if t == "obsidian_vault_open":
+        return f"vault={action.get('vault_path', '')!r}"
+    if t == "tableplus_connection_open":
+        return f"connection={action.get('connection_name', '')!r}"
+    return str(action)
+
 # How long to wait (seconds) after opening an app before trying to move its window
 _AEROSPACE_SETTLE = 1.5
 
@@ -72,6 +92,7 @@ class Replayer:
         self._browser_registry = None  # Browser — lazy-loaded
         self._ide_registry = None      # IDE — lazy-loaded
         self._terminal_registry = None  # Terminal — lazy-loaded
+        self._tools_registry = None    # DevTools — lazy-loaded
         self._aerospace: object | None = _SENTINEL  # AeroSpace — lazy-loaded
         self._opened_terminal_sessions: set[str] = set()  # Track opened sessions
 
@@ -102,6 +123,13 @@ class Replayer:
             from spaceload.adapters.terminal.registry import TerminalAdapterRegistry
             self._terminal_registry = TerminalAdapterRegistry()
         return self._terminal_registry
+
+    def _get_tools_registry(self):
+        """Return a ToolAdapterRegistry, initialising it on first call."""
+        if self._tools_registry is None:
+            from spaceload.adapters.tools.registry import ToolAdapterRegistry
+            self._tools_registry = ToolAdapterRegistry()
+        return self._tools_registry
 
     def _get_aerospace(self):
         """Return the active workspace manager adapter, or None. Cached after first call."""
@@ -199,6 +227,14 @@ class Replayer:
                     self._handle_terminal_command(i, action)
             elif action_type == "app_open":
                 self._handle_app_open(i, action)
+            elif action_type in (
+                "docker_containers",
+                "kubectl_context",
+                "aws_profile",
+                "obsidian_vault_open",
+                "tableplus_connection_open",
+            ):
+                self._handle_tool_state(i, action)
             else:
                 print(f"  [{i:>3}] {action_type}: {data}")
 
@@ -512,6 +548,45 @@ class Replayer:
 
         if workspace:
             self._place_in_workspace(app_name, workspace)
+
+    # ------------------------------------------------------------------
+    # Developer tool action handlers
+    # ------------------------------------------------------------------
+
+    def _handle_tool_state(self, index: int, action: dict[str, Any]) -> None:
+        """Replay a developer tool state action via the ToolAdapterRegistry."""
+        action_type = action.get("type", "")
+        registry = self._get_tools_registry()
+
+        # Map action type → adapter name
+        _TYPE_TO_ADAPTER = {
+            "docker_containers": "docker",
+            "kubectl_context": "kubectl",
+            "aws_profile": "aws",
+            "obsidian_vault_open": "obsidian",
+            "tableplus_connection_open": "tableplus",
+        }
+        adapter_name = _TYPE_TO_ADAPTER.get(action_type, "")
+
+        # Print a brief summary line
+        summary = _tool_action_summary(action)
+        print(f"  [{index:>3}] {action_type}: {summary}")
+
+        adapter = registry.get_adapter(adapter_name)
+        if adapter is None:
+            logger.warning("  Result: SKIPPED - no adapter found for %r", adapter_name)
+            print(f"         [warn] No adapter for '{adapter_name}' — skipping")
+            return
+
+        success = adapter.apply(action)
+        if success:
+            logger.info("  Result: SUCCESS - applied %s via %s", action_type, adapter_name)
+            if action_type != "aws_profile":
+                # aws_profile prints its own [ok] line inside apply()
+                print(f"         [ok] Applied {action_type}")
+        else:
+            logger.warning("  Result: FAILED - could not apply %s", action_type)
+            print(f"         [warn] Could not apply {action_type} — continuing")
 
     # ------------------------------------------------------------------
     # AeroSpace workspace placement helper
