@@ -20,7 +20,16 @@ class AeroSpaceAdapter(WorkspaceManagerAdapter):
         return "aerospace"
 
     def is_available(self) -> bool:
-        return shutil.which("aerospace") is not None
+        if shutil.which("aerospace") is None:
+            return False
+        # Binary present but the AeroSpace.app server may not be running.
+        # Run a cheap query and treat a non-zero exit as "not available".
+        result = subprocess.run(
+            ["aerospace", "list-workspaces", "--all"],
+            capture_output=True,
+            timeout=2,
+        )
+        return result.returncode == 0
 
     def list_windows(self) -> list[WMWindow]:
         result = subprocess.run(

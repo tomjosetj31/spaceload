@@ -896,7 +896,9 @@ def _get_running_foreground_apps() -> set[str]:
     Uses lsappinfo (no Automation/Accessibility permissions required) with an
     AppleScript fallback for older macOS versions where lsappinfo is absent.
     """
-    # Primary: lsappinfo — lists all GUI apps without requiring special permissions
+    # Primary: lsappinfo — lists all GUI apps without requiring special permissions.
+    # Output format: each entry starts with ' N) "AppName" ASN:...' followed by
+    # indented key=value lines. Background-only daemons have type="BackgroundOnly".
     try:
         result = subprocess.run(
             ["/usr/bin/lsappinfo", "list"],
@@ -906,10 +908,16 @@ def _get_running_foreground_apps() -> set[str]:
         )
         if result.returncode == 0 and result.stdout.strip():
             names: set[str] = set()
-            for line in result.stdout.splitlines():
-                m = re.match(r'\s*name\s*=\s*"([^"]+)"', line)
-                if m:
-                    names.add(m.group(1))
+            # Split output into per-app blocks on numbered entry headers
+            blocks = re.split(r'\n(?=\s*\d+\)\s+")', result.stdout)
+            for block in blocks:
+                m = re.match(r'\s*\d+\)\s+"([^"]+)"', block)
+                if not m:
+                    continue
+                # Skip background-only daemons; keep Foreground and UIElement apps
+                if 'type="BackgroundOnly"' in block:
+                    continue
+                names.add(m.group(1))
             if names:
                 return names
     except (subprocess.SubprocessError, OSError):

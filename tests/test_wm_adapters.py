@@ -68,11 +68,21 @@ class TestAeroSpaceAdapter:
         assert self.adapter.name == "aerospace"
 
     def test_is_available_true(self):
-        with patch("shutil.which", return_value="/usr/local/bin/aerospace"):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        with patch("shutil.which", return_value="/usr/local/bin/aerospace"), \
+             patch("subprocess.run", return_value=mock_proc):
             assert self.adapter.is_available() is True
 
     def test_is_available_false(self):
         with patch("shutil.which", return_value=None):
+            assert self.adapter.is_available() is False
+
+    def test_is_available_server_not_running(self):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 1
+        with patch("shutil.which", return_value="/usr/local/bin/aerospace"), \
+             patch("subprocess.run", return_value=mock_proc):
             assert self.adapter.is_available() is False
 
     def test_list_windows_parses_correctly(self):
