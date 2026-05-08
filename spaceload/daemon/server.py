@@ -34,6 +34,7 @@ from spaceload.adapters.vpn.registry import VPNAdapterRegistry
 from spaceload.adapters.browser.registry import BrowserAdapterRegistry
 from spaceload.adapters.ide.registry import IDEAdapterRegistry
 from spaceload.adapters.terminal.registry import TerminalAdapterRegistry
+from spaceload.adapters.tools.registry import ToolAdapterRegistry
 from spaceload.adapters.wm.registry import WorkspaceManagerRegistry
 from spaceload.adapters.wm.app_names import BROWSER_APP_NAMES, IDE_APP_NAMES, TERMINAL_APP_NAMES
 
@@ -880,6 +881,88 @@ class TerminalPoller:
         self._known_dirs[adapter.name] = current_dirs
 
 
+class DevToolsPoller:
+    """Background thread that polls developer tool state (docker, kubectl, aws, etc.).
+
+    On the first poll each available adapter captures its baseline state and
+    emits an action immediately — tool context is always relevant to replay.
+    On subsequent polls an action is emitted only when the state changes.
+    """
+
+    def __init__(
+        self,
+        actions: list[dict],
+        poll_interval: float = 5.0,
+    ) -> None:
+        self._actions = actions
+        self._poll_interval = poll_interval
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        # Maps adapter name → last emitted state dict (or None = not yet seen)
+        self._last_state: dict[str, dict | None] = {}
+
+    def start(self) -> None:
+        self._thread = threading.Thread(
+            target=self._run, daemon=True, name="devtools-poller"
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=self._poll_interval + 1)
+
+    def _run(self) -> None:
+        try:
+            registry = ToolAdapterRegistry()
+        except Exception as exc:
+            logger.warning("DevToolsPoller: could not initialise registry: %s", exc)
+            return
+
+        while not self._stop_event.is_set():
+            try:
+                self._poll(registry)
+            except Exception as exc:
+                logger.warning("DevToolsPoller: poll error: %s", exc)
+            self._stop_event.wait(timeout=self._poll_interval)
+
+    def _poll(self, registry) -> None:
+        for adapter in registry.available_adapters():
+            try:
+                state = adapter.detect()
+            except Exception as exc:
+                logger.warning("DevToolsPoller: error detecting %s: %s", adapter.name, exc)
+                continue
+
+            if state is None:
+                continue
+
+            last = self._last_state.get(adapter.name)
+            if self._states_differ(last, state):
+                action = {
+                    "type": adapter.action_type,
+                    "timestamp": _now_iso(),
+                    **state,
+                }
+                self._actions.append(action)
+                logger.info(
+                    "DevToolsPoller: RECORDED %s %s", adapter.action_type, state
+                )
+                self._last_state[adapter.name] = state
+
+    @staticmethod
+    def _states_differ(old: dict | None, new: dict | None) -> bool:
+        """Return True when two state dicts represent different tool state."""
+        if old is None:
+            return True  # first observation — always emit
+        if old is new:
+            return False
+        # Normalise list values to sorted tuples for stable comparison
+        def _norm(d: dict) -> dict:
+            return {k: (tuple(sorted(v)) if isinstance(v, list) else v) for k, v in d.items()}
+        return _norm(old) != _norm(new)
+
+
 def _get_running_foreground_apps() -> set[str]:
     """Return names of all visible (foreground) apps.
 
@@ -1126,6 +1209,7 @@ class RecorderDaemon:
         self._browser_poller: BrowserPoller | None = None
         self._ide_poller: IDEPoller | None = None
         self._terminal_poller: TerminalPoller | None = None
+        self._devtools_poller: DevToolsPoller | None = None
         self._window_poller: WindowSnapshotPoller | None = None
 
     # ------------------------------------------------------------------
@@ -1170,6 +1254,9 @@ class RecorderDaemon:
 
         self._terminal_poller = TerminalPoller(self._actions, include_open=self.include_open)
         self._terminal_poller.start()
+
+        self._devtools_poller = DevToolsPoller(self._actions)
+        self._devtools_poller.start()
 
         self._window_poller = WindowSnapshotPoller(self._actions, include_open=self.include_open)
         self._window_poller.start()
@@ -1289,6 +1376,8 @@ class RecorderDaemon:
             self._ide_poller.stop()
         if self._terminal_poller is not None:
             self._terminal_poller.stop()
+        if self._devtools_poller is not None:
+            self._devtools_poller.stop()
         if self._window_poller is not None:
             self._window_poller.stop()
 

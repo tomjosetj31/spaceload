@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from spaceload.adapters.ide.base import IDEAdapter
 from spaceload.adapters.ide.cursor import CursorAdapter
+from spaceload.adapters.ide.pycharm import PyCharmAdapter
 from spaceload.adapters.ide.vscode import VSCodeAdapter
 from spaceload.adapters.ide.zed import ZedAdapter
 
@@ -16,6 +17,7 @@ class IDEAdapterRegistry:
             VSCodeAdapter(),
             CursorAdapter(),
             ZedAdapter(),
+            PyCharmAdapter(),
         ]
 
     def available_adapters(self) -> list[IDEAdapter]:
