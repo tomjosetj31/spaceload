@@ -560,6 +560,71 @@ def diff_cmd(name_a: str, name_b: str | None, current: bool) -> None:
 
 
 # ---------------------------------------------------------------------------
+# spaceload focus <name>
+# ---------------------------------------------------------------------------
+
+@cli.command("focus")
+@click.argument("name")
+@click.option("--yes", "-y", is_flag=True, default=False,
+              help="Skip confirmations for safe actions (e.g. closing tabs).")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show what would open/close without doing anything.")
+@click.option("--no-close", is_flag=True, default=False,
+              help="Only open workspace items, never close anything.")
+@click.option("--keep", "keep_patterns", multiple=True, metavar="PATTERN",
+              help="Keep open tabs matching PATTERN even if not in workspace. "
+                   "Accepts wildcard domains (*.notion.so), bare domains (github.com), "
+                   "or URL substrings. Can be repeated.")
+@click.option("--close-terminals", is_flag=True, default=False,
+              help="Also close unrelated terminal sessions (requires confirmation).")
+@click.option("--verbose", "-v", is_flag=True, default=False,
+              help="Print each action as it executes.")
+def focus(
+    name: str,
+    yes: bool,
+    dry_run: bool,
+    no_close: bool,
+    keep_patterns: tuple[str, ...],
+    close_terminals: bool,
+    verbose: bool,
+) -> None:
+    """Open workspace NAME and close unrelated context.
+
+    Reads the saved workspace, closes browser tabs not in it (with
+    confirmation), opens tabs and IDE projects defined in it, and
+    starts any recorded Docker services.
+
+    \b
+    Examples:
+      spaceload focus payments-service
+      spaceload focus payments-service --dry-run
+      spaceload focus payments-service --yes --keep "*.notion.so" --keep github.com
+      spaceload focus payments-service --no-close
+    """
+    store = _get_store()
+    try:
+        ws = store.get_workspace(name)
+        if ws is None:
+            click.echo(f"Workspace '{name}' not found.", err=True)
+            import sys; sys.exit(1)
+        actions = store.get_actions(ws["id"])
+    finally:
+        store.close()
+
+    from spaceload.focus.focus_service import run_focus
+    run_focus(
+        workspace_name=name,
+        actions=actions,
+        keep_patterns=list(keep_patterns),
+        yes=yes,
+        dry_run=dry_run,
+        no_close=no_close,
+        close_terminals=close_terminals,
+        verbose=verbose,
+    )
+
+
+# ---------------------------------------------------------------------------
 # spaceload shell-hook <shell>
 # ---------------------------------------------------------------------------
 
